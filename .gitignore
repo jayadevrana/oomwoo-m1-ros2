@@ -1,0 +1,17 @@
+# colcon
+build/
+install/
+log/
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# editor / os
+.vscode/
+.idea/
+*.swp
+.DS_Store
+._*
