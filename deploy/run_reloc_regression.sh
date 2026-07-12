@@ -10,6 +10,8 @@ source /ros_ws/install/setup.bash
 [ -f /overlay_ws/install/setup.bash ] && source /overlay_ws/install/setup.bash
 [ -f "$HOME/oomwoo-dev/install/setup.bash" ] && source "$HOME/oomwoo-dev/install/setup.bash"
 export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+# isolate DDS discovery so a co-running ROS graph can't interfere
+export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-77} ROS_LOCALHOST_ONLY=1
 
 TRIALS=${TRIALS:-10}
 LOG=${LOG:-/tmp/reloc_regression.log}
