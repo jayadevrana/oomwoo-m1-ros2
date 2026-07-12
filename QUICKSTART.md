@@ -48,9 +48,23 @@ summary; exits 0 on pass. Expect:
 COVERAGE_SUMMARY coverage=0.90.. efficiency=0.86.. ... pass=True
 ```
 
+## 4. Coverage on the stock living_room (optional)
+
+Same coverage test, on the stock `living_room` world instead of the primitives
+room (furniture visuals are stock; collision proxies added so the robot can't
+drive through the meshes — see the README/HANDOVER):
+
+```bash
+docker exec oom bash /root/oomwoo-dev/deploy/run_coverage_livingroom.sh
+```
+
+The room is cluttered, so coverage lands ~90% but efficiency is much lower than
+the open room by design. Exit code is non-zero because it still checks the 80%
+efficiency gate — read the printed `coverage_report.json` for the numbers.
+
 ## That's it
 
-Both are fully headless (`--headless-rendering`, software GL) — no display, no
+All are fully headless (`--headless-rendering`, software GL) — no display, no
 GPU, drops straight into CI. The JSON reports land at `/root/reloc_report.json`
 and `/root/coverage_report.json` inside the container.
 

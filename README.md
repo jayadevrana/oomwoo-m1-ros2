@@ -112,11 +112,38 @@ instead of drifting near the 30 s limit.
 ## The test world and map
 
 `test_room` is a 6.5 × 6.5 m living room built from plain boxes and cylinders
-(walls, sofa, coffee table, bookshelf, TV stand). It's made of primitives on
-purpose: under headless software rendering the LiDAR ray-tests primitives
-cleanly, whereas a few of the stock `living_room` COLLADA meshes are invisible to
-it. `tools/gen_map.py` writes a pixel-perfect map straight from that geometry, so
-the map is complete and the regression is repeatable.
+(walls, sofa, coffee table, bookshelf, TV stand). It's the primary regression
+world because it's fully deterministic — `tools/gen_map.py` writes a pixel-perfect
+map straight from that geometry, so the map is complete and the run is repeatable.
+
+## It also runs on the stock living_room
+
+```bash
+./deploy/run_coverage_livingroom.sh
+```
+
+I profiled the stock `makerspet` `living_room` on native x86-64 and it holds up
+better than expected — with two corrections and one fix:
+
+- **The furniture is visible to the headless LiDAR.** All 360 beams return and the
+  robot sees the sofa (`.obj`) and marble table (`.dae`) at 0.2–0.6 m. The
+  "invisible COLLADA meshes" I saw earlier was an ARM-emulation artifact, not the
+  world.
+- **`.obj` furniture already collides** — the robot stops at the sofa, no
+  pass-through.
+- **The `.dae` marble table did not collide** (Gazebo's dartsim builds no
+  collision for that mesh) — the robot drove straight through it. Fix:
+  `tools/gen_livingroom_proxies.py` adds a collision-only box proxy per mesh
+  furniture item, sized to the mesh bounding box. Visuals stay stock (LiDAR still
+  sees the real meshes); the boxes just stop the robot. Table pass-through goes
+  from 0.81 m to a 0.21 m stop.
+
+The stock SLAM map is in a frame offset from the gz world, so
+`tools/gen_livingroom_map.py` regenerates a world-aligned map from the world
+geometry. Coverage in this cluttered room (widest gap ~1.5 m) lands at **90.0 %**,
+but efficiency drops to **~39 %** — the clutter forces a lot of maneuvering, so the
+robot drives ~2.5× the ideal sweep length. That's the honest number for a room
+this tight; `test_room` is the world that meets the 80 % efficiency bar.
 
 ## One gotcha: run on x86-64, not ARM
 

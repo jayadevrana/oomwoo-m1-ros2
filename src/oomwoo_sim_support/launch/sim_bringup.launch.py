@@ -39,8 +39,12 @@ def generate_launch_description() -> LaunchDescription:
 
     # coarser 200 Hz physics step (vs the stock 1 kHz) so the bridged /clock
     # is 5x lighter — critical for a stable sim clock under x86 emulation.
-    world = os.path.join(pkg_sim, 'worlds', 'test_room.world')
-    map_yaml = os.path.join(pkg_sim, 'maps', 'test_room.yaml')
+    # World + map default to the primitives test_room but are overridable so the
+    # same harness can drive the stock living_room (or any other world/map pair).
+    default_world = os.path.join(pkg_sim, 'worlds', 'test_room.world')
+    default_map = os.path.join(pkg_sim, 'maps', 'test_room.yaml')
+    world = LaunchConfiguration('world')
+    map_yaml = LaunchConfiguration('map')
     xacro_file = os.path.join(pkg_oomwoo, 'urdf', 'robot.urdf.xacro')
     nav2_params = os.path.join(pkg_sim, 'config', 'nav2_params.yaml')
     bridge_sim = os.path.join(pkg_oomwoo, 'config', 'gz_bridge.yaml')
@@ -53,6 +57,8 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument('x_pose', default_value='0.0'),
         DeclareLaunchArgument('y_pose', default_value='0.0'),
         DeclareLaunchArgument('yaw', default_value='0.0'),
+        DeclareLaunchArgument('world', default_value=default_world),
+        DeclareLaunchArgument('map', default_value=default_map),
         # coverage needs the Nav2 nav servers; relocalization does not (it only
         # spins in place under AMCL), so it can bring up a much lighter stack.
         DeclareLaunchArgument('with_nav', default_value='true'),
@@ -105,8 +111,13 @@ def generate_launch_description() -> LaunchDescription:
         package='nav2_amcl', executable='amcl', name='amcl', output='screen',
         parameters=[nav2_params, {
             'use_sim_time': True, 'set_initial_pose': True,
-            'initial_pose.x': 0.0, 'initial_pose.y': 0.0,
-            'initial_pose.z': 0.0, 'initial_pose.yaw': 0.0,
+            # seed AMCL at the spawn pose (float-coerced from the launch args) so
+            # a non-origin start (e.g. the clear cell in the cluttered living_room)
+            # localizes immediately; test_room keeps its 0,0 default.
+            'initial_pose.x': ParameterValue(x0, value_type=float),
+            'initial_pose.y': ParameterValue(y0, value_type=float),
+            'initial_pose.z': 0.0,
+            'initial_pose.yaw': ParameterValue(yaw0, value_type=float),
             # update the filter a bit more often (vs 0.25 m / 0.2 rad) so a
             # kidnapped robot re-converges faster during the recovery drive.
             # recovery_alpha stays disabled (stock): continuous particle
