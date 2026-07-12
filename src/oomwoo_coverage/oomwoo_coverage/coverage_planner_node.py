@@ -38,8 +38,8 @@ from rclpy.qos import (
 
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid
-from nav2_msgs.action import NavigateThroughPoses
-from std_msgs.msg import Float32
+from nav2_msgs.action import NavigateToPose
+from std_msgs.msg import Bool, Float32
 
 # OccupancyGrid cell conventions
 FREE = 0
@@ -95,6 +95,18 @@ class CoveragePlanner(Node):
         self.last_attempt = None        # time of last goal send (for retry)
         self.retry_period = 5.0         # s between goal retries on rejection
         self.goal_handle = None
+        self.wp_index = 0              # next waypoint to visit
+        self.goal_deadline = None      # per-waypoint watchdog start
+        self.declare_parameter('goal_timeout_sec', 30.0)
+        self.goal_timeout = self.get_parameter('goal_timeout_sec').value
+        self.declare_parameter('max_retries', 3)
+        self.max_retries = self.get_parameter('max_retries').value
+        self.awaiting = False
+        self.wp_retries = 0
+        self.next_send = None
+        self.gapfill_passes = 0
+        self.declare_parameter('max_gapfill', 3)
+        self.max_gapfill = self.get_parameter('max_gapfill').value
 
         # --- ROS plumbing -------------------------------------------------
         # Coverage % comes from the coverage_meter (ground-truth based), so this
@@ -106,11 +118,19 @@ class CoveragePlanner(Node):
             OccupancyGrid, 'keepout_filter_mask', self._on_keepout, latched_qos())
         self.create_subscription(
             Float32, 'coverage_ratio', self._on_ratio, 10)
+        self.covered_grid = None
         self.create_subscription(
-            PoseWithCovarianceStamped, 'amcl_pose', self._on_amcl, 10)
+            OccupancyGrid, 'covered_grid', self._on_covered, latched_qos())
+        # AMCL latches amcl_pose (transient_local) and only republishes on
+        # motion — match its durability or a still robot never sends a pose
+        self.create_subscription(
+            PoseWithCovarianceStamped, 'amcl_pose', self._on_amcl,
+            latched_qos())
 
+        self.active_pub = self.create_publisher(
+            Bool, '~/cleaning_active', latched_qos())
         self.nav_client = ActionClient(
-            self, NavigateThroughPoses, 'navigate_through_poses')
+            self, NavigateToPose, 'navigate_to_pose')
 
         # 5 Hz coverage accounting; planning kicks off once the map arrives
         self.create_timer(0.2, self._tick)
@@ -155,6 +175,27 @@ class CoveragePlanner(Node):
     def _on_ratio(self, msg: Float32) -> None:
         self.ext_ratio = float(msg.data)
 
+    def _on_covered(self, msg: OccupancyGrid) -> None:
+        self.covered_grid = np.asarray(msg.data, dtype=np.int8).reshape(
+            msg.info.height, msg.info.width)
+
+    def _covered_at(self, pose) -> bool:
+        """True when the disk around this waypoint is already mostly clean."""
+        if self.covered_grid is None or self.map_msg is None:
+            return False
+        info = self.map_msg.info
+        res = info.resolution
+        cx = int((pose.pose.position.x - info.origin.position.x) / res)
+        cy = int((pose.pose.position.y - info.origin.position.y) / res)
+        r = max(1, int(round(self.cleaning_radius / res)))
+        h, w = self.covered_grid.shape
+        y0, y1 = max(0, cy - r), min(h, cy + r + 1)
+        x0, x1 = max(0, cx - r), min(w, cx + r + 1)
+        if y0 >= y1 or x0 >= x1:
+            return False
+        sub = self.covered_grid[y0:y1, x0:x1]
+        return float((sub >= 100).mean()) > 0.6
+
     def _on_amcl(self, msg: PoseWithCovarianceStamped) -> None:
         self.robot_xy = (msg.pose.pose.position.x, msg.pose.pose.position.y)
 
@@ -187,30 +228,39 @@ class CoveragePlanner(Node):
         step = max(1, int(round(step_m / res)))
         min_seg_cells = max(1, int(round(self.min_segment_len / res)))
 
-        # rows from the robot's row outward: down first, then up
-        robot_row = seed[0]
-        rows_down = list(range(robot_row, -1, -step))
-        rows_up = list(range(robot_row + step, h, step))
-        ordered_rows = rows_down + rows_up
+        # Continuous bottom-to-top serpentine (no down-then-up split). The robot
+        # transits once to the first row, then sweeps straight through — this
+        # avoids a wasteful mid-sweep jump across the room. The first row is
+        # chosen as whichever end (bottom/top) is nearer the robot.
+        rows = list(range(0, h, step))
+        if rows and abs(seed[0] - rows[-1]) < abs(seed[0] - rows[0]):
+            rows.reverse()
+
+        # intermediate waypoints along each row keep the robot ON the straight
+        # row line: with only two endpoints, the controller cuts the corner
+        # toward the far next-row goal and curves, adding path and leaving band
+        # slivers. One waypoint per `substep` metres tightens tracking.
+        substep = max(1, int(round(1.0 / res)))
 
         waypoints: List[Tuple[float, float]] = []
-        for i, row in enumerate(ordered_rows):
+        flip = False
+        for row in rows:
             cols = np.where(reachable[row])[0]
             if cols.size == 0:
                 continue
+            y = oy + (row + 0.5) * res
             for seg in _contiguous_runs(cols):
                 if seg[-1] - seg[0] + 1 < min_seg_cells:
                     continue
                 a, b = int(seg[0]), int(seg[-1])
-                y = oy + (row + 0.5) * res
-                xa = ox + (a + 0.5) * res
-                xb = ox + (b + 0.5) * res
-                if i % 2 == 0:                 # serpentine
-                    waypoints.append((xa, y))
-                    waypoints.append((xb, y))
-                else:
-                    waypoints.append((xb, y))
-                    waypoints.append((xa, y))
+                pts = list(range(a, b + 1, substep))
+                if pts[-1] != b:
+                    pts.append(b)
+                if flip:                       # serpentine per row
+                    pts.reverse()
+                for c in pts:
+                    waypoints.append((ox + (c + 0.5) * res, y))
+            flip = not flip
 
         poses: List[PoseStamped] = []
         for (x, y) in waypoints:
@@ -222,9 +272,14 @@ class CoveragePlanner(Node):
             poses.append(p)
         return poses
 
+    # ----------------------------------------------------------- execution
+    # Waypoints are executed ONE AT A TIME via NavigateToPose, not as a single
+    # NavigateThroughPoses goal. A NavigateThroughPoses goal aborts the *whole*
+    # sequence when one pose is briefly unreachable, and the replan-from-scratch
+    # re-drives already-cleaned rows (efficiency collapse). Per-waypoint goals
+    # are independent: a failure just advances to the next, and a per-goal
+    # timeout prevents Nav2 from grinding on a hard pose.
     def _start_plan(self) -> None:
-        # Nav2 lifecycle activation can lag well behind process start under a
-        # slow/emulated sim, so retry until the action server accepts the goal.
         self.last_attempt = self.get_clock().now()
         if self.robot_xy is None:
             self.get_logger().info('waiting for robot pose (amcl)...')
@@ -235,43 +290,136 @@ class CoveragePlanner(Node):
                 self.get_logger().warn('no waypoints yet; will retry')
                 return
             self.cached_poses = poses
+            self.wp_index = 0
+            self.get_logger().info(
+                f'coverage plan: {len(poses)} waypoints, executing sequentially')
         if not self.nav_client.server_is_ready():
             self.nav_client.wait_for_server(timeout_sec=0.0)
-            self.get_logger().info('waiting for navigate_through_poses server...')
+            self.get_logger().info('waiting for navigate_to_pose server...')
             return
-        now = self.get_clock().now().to_msg()
-        for p in self.cached_poses:
-            p.header.stamp = now
-        goal = NavigateThroughPoses.Goal()
-        goal.poses = self.cached_poses
-        self.get_logger().info(
-            f'sending coverage plan: {len(self.cached_poses)} waypoints')
+        self.active_pub.publish(Bool(data=True))
         self.plan_started = True
+        self.awaiting = False           # a goal is in flight
+        self.wp_retries = 0
+        self.next_send = self.get_clock().now()
+        # sends are paced by _tick so instant-aborts (Nav2 not ready) retry the
+        # SAME waypoint instead of burning through the whole list
+
+    def _send_next(self) -> None:
+        # skip waypoints already cleaned (coverage grid)
+        while (self.wp_index < len(self.cached_poses)
+               and self._covered_at(self.cached_poses[self.wp_index])):
+            self.wp_index += 1
+            self.wp_retries = 0
+        if self.wp_index >= len(self.cached_poses):
+            # the boustrophedon leaves furniture-shadow / pocket gaps a single
+            # sweep direction can't reach; a targeted gap-fill pass visits the
+            # remaining uncovered clusters directly (real vacuums do the same
+            # spot-recleaning). Cheap in path since it only touches what's left.
+            if self.ext_ratio < self.coverage_target and \
+                    self.gapfill_passes < self.max_gapfill:
+                gaps = self._gapfill_waypoints()
+                if gaps:
+                    self.gapfill_passes += 1
+                    self.cached_poses = gaps
+                    self.wp_index = 0
+                    self.get_logger().info(
+                        f'gap-fill pass {self.gapfill_passes}: '
+                        f'{len(gaps)} uncovered spots, coverage '
+                        f'{self.ext_ratio:.1%}')
+                    return
+            self.get_logger().info(
+                f'coverage complete: {self.ext_ratio:.1%} covered')
+            self.finished = True
+            return
+        if not self.nav_client.server_is_ready():
+            return                      # try again next tick
+        p = self.cached_poses[self.wp_index]
+        p.header.stamp = self.get_clock().now().to_msg()
+        goal = NavigateToPose.Goal()
+        goal.pose = p
+        self.awaiting = True
+        self.goal_deadline = self.get_clock().now()
         self.nav_client.send_goal_async(goal).add_done_callback(
             self._on_goal_response)
+
+    def _gapfill_waypoints(self):
+        """Waypoints at the still-uncovered drivable cells, nearest-neighbour
+        ordered from the robot so the fill path is short."""
+        if self.covered_grid is None or self.free_mask is None:
+            return []
+        info = self.map_msg.info
+        res = info.resolution
+        cov = self.covered_grid >= 100
+        if cov.shape != self.free_mask.shape:
+            return []
+        uncovered = self.free_mask & ~cov          # drivable but not cleaned
+        ys, xs = np.where(uncovered)
+        if ys.size == 0:
+            return []
+        # subsample to ~0.3 m so we don't over-visit a cluster
+        keep = ((ys % 6 == 0) & (xs % 6 == 0))
+        ys, xs = ys[keep], xs[keep]
+        if ys.size == 0:
+            return []
+        pts = [(ox_i, oy_i) for ox_i, oy_i in zip(xs.tolist(), ys.tolist())]
+        # nearest-neighbour order from the robot's current cell
+        rcx = int((self.robot_xy[0] - info.origin.position.x) / res)
+        rcy = int((self.robot_xy[1] - info.origin.position.y) / res)
+        order, cur = [], (rcx, rcy)
+        remaining = pts[:]
+        while remaining and len(order) < 60:
+            j = min(range(len(remaining)),
+                    key=lambda k: (remaining[k][0] - cur[0]) ** 2
+                    + (remaining[k][1] - cur[1]) ** 2)
+            cur = remaining.pop(j)
+            order.append(cur)
+        poses = []
+        for (cx, cy) in order:
+            p = PoseStamped()
+            p.header.frame_id = self.global_frame
+            p.pose.position.x = info.origin.position.x + (cx + 0.5) * res
+            p.pose.position.y = info.origin.position.y + (cy + 0.5) * res
+            p.pose.orientation.w = 1.0
+            poses.append(p)
+        return poses
 
     def _on_goal_response(self, fut) -> None:
         handle = fut.result()
         if not handle.accepted:
-            # server was not active yet — fall back to retry in _tick
-            self.get_logger().warn('coverage goal rejected; will retry')
-            self.plan_started = False
+            self.awaiting = False       # Nav2 busy/not-ready -> retry same wp
+            self.next_send = self.get_clock().now()
             return
         self.goal_handle = handle
-        self.get_logger().info('coverage goal accepted; executing sweep')
         handle.get_result_async().add_done_callback(self._on_result)
 
-    def _on_result(self, _fut) -> None:
+    def _on_result(self, fut) -> None:
+        status = fut.result().status    # 4=SUCCEEDED, 5=CANCELED, 6=ABORTED
         self.goal_handle = None
+        self.awaiting = False
+        self.goal_deadline = None
         if self.finished:
             return
-        # Nav2 finished the waypoint list; if coverage is short, replan the gaps
-        ratio = self._ratio()
-        self.get_logger().info(f'coverage run ended; coverage={ratio:.1%}')
-        if ratio >= self.coverage_target:
-            self.finished = True
+        if status == 4:                 # reached the waypoint
+            self.wp_index += 1
+            self.wp_retries = 0
         else:
-            self.plan_started = False   # allow a fresh sweep attempt
+            # aborted/canceled: retry the SAME waypoint a few times (Nav2 may
+            # just have been settling); skip only if it stays unreachable
+            self.wp_retries += 1
+            if self.wp_retries >= self.max_retries:
+                self.get_logger().warn(
+                    f'waypoint {self.wp_index} unreachable after '
+                    f'{self.wp_retries} tries; skipping')
+                self.wp_index += 1
+                self.wp_retries = 0
+        if self.wp_index % 10 == 0 and self.wp_retries == 0:
+            self.get_logger().info(
+                f'waypoint {self.wp_index}/{len(self.cached_poses)}, '
+                f'coverage {self.ext_ratio:.1%}')
+        # small cooldown so a run of instant-aborts can't spin the CPU
+        self.next_send = self.get_clock().now() + rclpy.duration.Duration(
+            seconds=0.25)
 
     def _elapsed(self, t) -> float:
         return (self.get_clock().now() - t).nanoseconds * 1e-9
@@ -290,10 +438,29 @@ class CoveragePlanner(Node):
             if self.goal_handle is not None:
                 self.goal_handle.cancel_goal_async()
                 self.goal_handle = None
-        elif not self.plan_started and not self.finished:
+            return
+        if self.finished:
+            return
+
+        if not self.plan_started:
             if self.last_attempt is None or self._elapsed(self.last_attempt) >= \
                     self.retry_period:
                 self._start_plan()
+            return
+
+        # per-goal watchdog: cancel a waypoint Nav2 is grinding on
+        if self.awaiting and self.goal_deadline is not None \
+                and self._elapsed(self.goal_deadline) >= self.goal_timeout:
+            self.get_logger().warn(f'waypoint {self.wp_index} timed out')
+            if self.goal_handle is not None:
+                self.goal_handle.cancel_goal_async()  # -> _on_result(CANCELED)
+            else:
+                self.awaiting = False
+                self.wp_retries = self.max_retries    # force skip next result
+        # dispatch the next waypoint once idle and past the cooldown
+        elif not self.awaiting \
+                and self.get_clock().now() >= self.next_send:
+            self._send_next()
 
 
 # ------------------------------------------------------------- numpy helpers

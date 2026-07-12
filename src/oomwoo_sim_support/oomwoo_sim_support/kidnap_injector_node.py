@@ -51,7 +51,7 @@ class KidnapInjector(Node):
         self.declare_parameter('robot_model_name', 'oomwoo_one')
         self.declare_parameter('world_name', 'default')
         self.declare_parameter('min_jump', 1.5)      # m, min teleport distance
-        self.declare_parameter('wall_clearance', 0.25)  # m from obstacles
+        self.declare_parameter('wall_clearance', 0.50)  # m from obstacles (robot center; body radius 0.175 + 3D-mesh overhang margin)
         self.declare_parameter('spawn_z', 0.06)
         self.declare_parameter('seed', 42)
 

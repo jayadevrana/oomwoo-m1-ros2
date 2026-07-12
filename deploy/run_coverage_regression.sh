@@ -3,7 +3,7 @@
 # Headless coverage-cleaning regression, CLI, CI-friendly.
 # Launches the sim + Nav2 + coverage planner/meter, runs the scoring node, and
 # exits 0 iff coverage >= 90% and efficiency >= 80%. No GUI/display required.
-set -euo pipefail
+set -eo pipefail
 
 source /opt/ros/jazzy/setup.bash
 source /ros_ws/install/setup.bash

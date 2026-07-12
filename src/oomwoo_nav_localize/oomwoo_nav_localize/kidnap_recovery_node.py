@@ -38,10 +38,32 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
+import numpy as np
+
 from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
+from nav_msgs.msg import OccupancyGrid
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Empty, Bool, Float32, String
 from std_srvs.srv import Empty as EmptySrv
+
+
+def _pose_differs(a, b, d_m: float = 1.0, d_yaw: float = 1.0) -> bool:
+    """True when two (x, y, yaw) hypotheses are genuinely distinct."""
+    dyaw = abs(math.atan2(math.sin(a[2] - b[2]), math.cos(a[2] - b[2])))
+    return math.hypot(a[0] - b[0], a[1] - b[1]) > d_m or dyaw > d_yaw
+
+
+def _dilate_bool(mask, radius):
+    """Binary dilation by a square structuring element."""
+    out = mask.copy()
+    for _ in range(radius):
+        s = out.copy()
+        s[1:, :] |= out[:-1, :]
+        s[:-1, :] |= out[1:, :]
+        s[:, 1:] |= out[:, :-1]
+        s[:, :-1] |= out[:, 1:]
+        out = s
+    return out
 
 
 class State(Enum):
@@ -68,6 +90,15 @@ def sensor_qos() -> QoSProfile:
     )
 
 
+def map_qos() -> QoSProfile:
+    return QoSProfile(
+        depth=1,
+        history=QoSHistoryPolicy.KEEP_LAST,
+        reliability=QoSReliabilityPolicy.RELIABLE,
+        durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+    )
+
+
 class KidnapRecovery(Node):
     def __init__(self) -> None:
         super().__init__('kidnap_recovery')
@@ -83,8 +114,13 @@ class KidnapRecovery(Node):
         self.declare_parameter('recovery_timeout_sec', 30.0)
         self.declare_parameter('spin_speed', 0.9)         # rad/s in-place
         self.declare_parameter('drive_speed', 0.16)       # m/s while exploring
-        self.declare_parameter('front_clear_m', 0.45)     # obstacle stop distance
-        self.declare_parameter('initial_spin_sec', 4.0)   # spin first to see 360
+        self.declare_parameter('front_clear_m', 0.35)     # obstacle stop distance
+        self.declare_parameter('initial_spin_sec', 4.0)   # (legacy, unused)
+        self.declare_parameter('explore_sec', 6.0)        # (legacy, unused)
+        self.declare_parameter('settle_sec', 6.0)         # (legacy, unused)
+        self.declare_parameter('match_score_ok', 0.75)    # accept scan-match above
+        self.declare_parameter('verify_sec', 4.0)         # AMCL confirm window
+        self.declare_parameter('reposition_sec', 1.8)     # drive before re-match
         self.declare_parameter('settle_after_trigger_sec', 0.5)
 
         self.lost_trace = self.get_parameter('lost_cov_trace').value
@@ -95,6 +131,11 @@ class KidnapRecovery(Node):
         self.drive_speed = self.get_parameter('drive_speed').value
         self.front_clear_m = self.get_parameter('front_clear_m').value
         self.initial_spin_sec = self.get_parameter('initial_spin_sec').value
+        self.explore_sec = self.get_parameter('explore_sec').value
+        self.settle_sec = self.get_parameter('settle_sec').value
+        self.match_score_ok = self.get_parameter('match_score_ok').value
+        self.verify_sec = self.get_parameter('verify_sec').value
+        self.reposition_sec = self.get_parameter('reposition_sec').value
 
         # --- state --------------------------------------------------------
         self.state = State.TRACKING
@@ -103,6 +144,15 @@ class KidnapRecovery(Node):
         self.converged_since: Optional[rclpy.time.Time] = None
         self.reinit_sent = False
         self.front_clear = True
+        self.open_heading = 0.0
+        self.last_scan = None
+        self.map_grid = None
+        self.map_res = 0.05
+        self.map_ox = 0.0
+        self.map_oy = 0.0
+        self.rt_table = None        # expected-range table (built lazily)
+        self.rt_px = None
+        self.rt_py = None
 
         # --- ROS plumbing -------------------------------------------------
         self.create_subscription(
@@ -110,7 +160,10 @@ class KidnapRecovery(Node):
         self.create_subscription(
             Empty, 'kidnap_trigger', self._on_trigger, 10)
         self.create_subscription(LaserScan, 'scan', self._on_scan, sensor_qos())
+        self.create_subscription(OccupancyGrid, 'map', self._on_map, map_qos())
 
+        self.initialpose_pub = self.create_publisher(
+            PoseWithCovarianceStamped, 'initialpose', 10)
         self.cmd_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.recovering_pub = self.create_publisher(Bool, '~/recovering', 10)
         self.conf_pub = self.create_publisher(Float32, '~/confidence', 10)
@@ -126,7 +179,18 @@ class KidnapRecovery(Node):
     def _on_amcl(self, msg: PoseWithCovarianceStamped) -> None:
         cov = msg.pose.covariance
         # covariance is row-major 6x6: xx=0, yy=7, yaw yaw=35
-        self.last_trace = float(cov[0] + cov[7] + cov[35])
+        self.last_trace = float(cov[0] + cov[7])  # xy only: yaw stays bimodal in near-symmetric rooms and would pin the full trace high
+
+    def _on_map(self, msg: OccupancyGrid) -> None:
+        if self.map_grid is not None:
+            return
+        self.map_grid = np.asarray(msg.data, dtype=np.int16).reshape(
+            msg.info.height, msg.info.width)
+        self.map_res = msg.info.resolution
+        self.map_ox = msg.info.origin.position.x
+        self.map_oy = msg.info.origin.position.y
+        self.get_logger().info(
+            f'map cached for scan-matching: {msg.info.width}x{msg.info.height}')
 
     def _on_trigger(self, _msg: Empty) -> None:
         # external "you were picked up / moved" signal (e.g. from sim harness
@@ -136,19 +200,39 @@ class KidnapRecovery(Node):
             self._enter_recovery()
 
     def _on_scan(self, msg: LaserScan) -> None:
-        # front clearance = min range within +/-25 deg of straight ahead
         n = len(msg.ranges)
         if n == 0:
             return
+        self.last_scan = msg
+        # front clearance = min range within +/-25 deg of straight ahead
         span = max(1, int((25.0 * math.pi / 180.0) / msg.angle_increment))
         window = list(msg.ranges[:span]) + list(msg.ranges[-span:])
         valid = [r for r in window if msg.range_min < r < msg.range_max]
         self.front_clear = (min(valid) > self.front_clear_m) if valid else True
 
+        # heading (relative to robot) of the most open direction, smoothed over a
+        # window, considering only the forward 180 deg so we drive INTO open space
+        # rather than reversing — this traverses the room fast and gives AMCL a
+        # diverse, disambiguating scan sequence.
+        best_ang, best_avg = 0.0, -1.0
+        half = max(1, int((15.0 * math.pi / 180.0) / msg.angle_increment))
+        fwd = max(1, int((math.pi / 2.0) / msg.angle_increment))  # +/-90 deg
+        for c in range(-fwd, fwd + 1, half):
+            idx = [(c + k) % n for k in range(-half, half + 1)]
+            rs = [msg.ranges[j] for j in idx
+                  if msg.range_min < msg.ranges[j] < msg.range_max]
+            if rs:
+                avg = sum(rs) / len(rs)
+                if avg > best_avg:
+                    best_avg, best_ang = avg, c * msg.angle_increment
+        self.open_heading = best_ang
+
     # -------------------------------------------------------------- logic
     def _enter_recovery(self) -> None:
         self.state = State.RECOVERING
         self.recover_start = self.get_clock().now()
+        self.phase = 'capture'
+        self.phase_start = self.recover_start
         self.converged_since = None
         self.reinit_sent = False
 
@@ -176,48 +260,197 @@ class KidnapRecovery(Node):
             self._stop()
 
     def _do_recovery(self, now) -> None:
-        # 1) scatter particles globally once AMCL client is available
-        if not self.reinit_sent:
-            if self.reinit_cli.service_is_ready():
-                self.reinit_cli.call_async(EmptySrv.Request())
-                self.reinit_sent = True
-                self.get_logger().info('AMCL global re-init requested')
-            elif not self.reinit_cli.wait_for_service(timeout_sec=0.0):
-                pass  # keep trying next tick
+        # Recovery = global SCAN-MATCH relocalization:
+        #   capture: stop, grab one full 360-deg scan
+        #   match:   brute-force score the scan against the map over all free
+        #            cells x yaw bins (vectorized; ~1-2 s) -> best pose
+        #   seed:    AMCL global re-init (honest covariance spike), then
+        #            /initialpose at the matched pose with tight covariance
+        #   verify:  slow scan-spin so AMCL updates; xy covariance collapsing
+        #            confirms the seed is consistent -> RELOCALIZED
+        #   reposition: low-confidence match or failed verify -> drive to a new
+        #            vantage point and try again (until timeout)
+        # A particle filter alone struggles here: the room is near-symmetric, so
+        # a yaw-mirrored hypothesis survives AMCL's 60-beam z_rand-diluted model
+        # indefinitely. Directly scoring the full scan against the map is
+        # decisive, and AMCL then polishes + tracks from the seed.
+        phase_t = (now - self.phase_start).nanoseconds * 1e-9
 
-        # 2) actively gather scans: spin in place first (see 360 from the drop
-        #    point), then explore (drive + obstacle-avoid) so AMCL can resolve
-        #    position, not just heading — pure rotation can't disambiguate where
-        #    in the room the robot is.
-        since_start = (now - self.recover_start).nanoseconds * 1e-9
-        if since_start < self.initial_spin_sec:
-            self._spin()
-        else:
-            self._explore()
-
-        # 3) converged? trace below ok for hold_sec continuously
-        trace = self.last_trace if self.last_trace is not None else math.inf
-        if trace <= self.ok_trace:
-            if self.converged_since is None:
-                self.converged_since = now
-            elif (now - self.converged_since).nanoseconds * 1e-9 >= self.hold_sec:
-                elapsed = (now - self.recover_start).nanoseconds * 1e-9
-                self._stop()
-                self.state = State.TRACKING
+        if self.phase == 'capture':
+            self._stop()
+            if phase_t >= 0.6 and self.last_scan is not None \
+                    and self.map_grid is not None:
+                best, score = self._scan_match(self.last_scan)
                 self.get_logger().info(
-                    f'RELOCALIZED in {elapsed:.1f}s (cov trace {trace:.3f})')
-                self._publish_status('RELOCALIZED', True)
-                return
-        else:
-            self.converged_since = None
+                    f'scan-match: pose=({best[0]:.2f},{best[1]:.2f},'
+                    f'{best[2]:.2f}) score={score:.2f}')
+                if score >= self.match_score_ok:
+                    if not self.reinit_sent:
+                        if self.reinit_cli.service_is_ready():
+                            self.reinit_cli.call_async(EmptySrv.Request())
+                        self.reinit_sent = True
+                    self._publish_initialpose(best)
+                    self.phase, self.phase_start = 'verify', now
+                else:
+                    self.phase, self.phase_start = 'reposition', now
 
-        # 4) timeout -> fail, hand off to dock-cycle find-the-dock fallback
+        elif self.phase == 'verify':
+            # slow in-place spin: position holds still while rotation keeps
+            # AMCL updating so its covariance reflects the seeded estimate
+            t = Twist()
+            t.angular.z = 0.5 * self.spin_speed
+            self.cmd_pub.publish(t)
+            trace = self.last_trace if self.last_trace is not None else math.inf
+            if phase_t >= 1.0 and trace <= self.ok_trace:
+                if self.converged_since is None:
+                    self.converged_since = now
+                elif (now - self.converged_since).nanoseconds * 1e-9 >= \
+                        self.hold_sec:
+                    elapsed = (now - self.recover_start).nanoseconds * 1e-9
+                    self._stop()
+                    self.state = State.TRACKING
+                    self.get_logger().info(
+                        f'RELOCALIZED in {elapsed:.1f}s (xy cov {trace:.3f})')
+                    self._publish_status('RELOCALIZED', True)
+                    return
+            else:
+                self.converged_since = None
+            if phase_t >= self.verify_sec:      # verify failed -> new vantage
+                self.phase, self.phase_start = 'reposition', now
+
+        else:  # reposition: drive toward open space for a fresh viewpoint
+            self._explore()
+            if phase_t >= self.reposition_sec:
+                self.phase, self.phase_start = 'capture', now
+
+        # timeout -> fail, hand off to dock-cycle find-the-dock fallback
         if (now - self.recover_start).nanoseconds * 1e-9 >= self.timeout_sec:
             self._stop()
             self.state = State.FAILED
             self.get_logger().error(
                 'relocalization FAILED (timeout) -> dock-cycle fallback')
             self._publish_status('LOCALIZATION_LOST', False)
+
+    # ------------------------------------------------- global scan matching
+    NDIRS = 72          # angular resolution of the range table (5 deg)
+    NOHIT = 99.0        # sentinel range for "no obstacle within map"
+    RANGE_TOL = 0.15    # m, beam agreement tolerance
+
+    def _build_range_table(self) -> None:
+        """Raycast the map once into expected ranges for every candidate free
+        cell x NDIRS directions. One-time cost (~2-4 s); makes each subsequent
+        global match a pure table correlation."""
+        grid, res, ox, oy = self.map_grid, self.map_res, self.map_ox, self.map_oy
+        h, w = grid.shape
+        occupied = grid >= 50
+        blocked = _dilate_bool(occupied | (grid < 0), 3)
+        free = (grid == 0) & ~blocked
+        cy, cx = np.where(free)
+        keep = (cy % 2 == 0) & (cx % 2 == 0)     # 10 cm candidate lattice
+        cy, cx = cy[keep], cx[keep]
+        px = (ox + (cx + 0.5) * res).astype(np.float32)
+        py = (oy + (cy + 0.5) * res).astype(np.float32)
+        P = px.size
+        dirs = np.linspace(-math.pi, math.pi, self.NDIRS,
+                           endpoint=False).astype(np.float32)
+        table = np.full((P, self.NDIRS), self.NOHIT, dtype=np.float32)
+        max_steps = int(math.hypot(h, w)) + 2
+        for j, ang in enumerate(dirs):
+            dx, dy = math.cos(ang) * res, math.sin(ang) * res
+            undecided = np.ones(P, dtype=bool)
+            exs, eys = px.copy(), py.copy()
+            for s in range(1, max_steps):
+                exs += dx
+                eys += dy
+                gx = ((exs - ox) / res).astype(np.int32)
+                gy = ((eys - oy) / res).astype(np.int32)
+                inb = (gx >= 0) & (gx < w) & (gy >= 0) & (gy < h)
+                hit = np.zeros(P, dtype=bool)
+                ok = inb & undecided
+                hit[ok] = occupied[gy[ok], gx[ok]]
+                table[hit, j] = s * res
+                undecided &= ~hit
+                undecided &= inb   # left the map without hitting -> NOHIT
+                if not undecided.any():
+                    break
+        self.rt_px, self.rt_py, self.rt_table = px, py, table
+        self.get_logger().info(
+            f'range table built: {P} candidates x {self.NDIRS} directions')
+
+    def _scan_match(self, scan) -> tuple:
+        """Correlative global localization: compare the measured 360-deg scan
+        against the precomputed expected-range table over all candidate poses
+        and yaw bins (yaw = circular shift of the table). Score = fraction of
+        directions whose measured range agrees within RANGE_TOL.
+        Returns ((x, y, yaw), score); score 0.0 when the best match is
+        ambiguous (a distinct pose scores nearly as well)."""
+        if self.rt_table is None:
+            self._build_range_table()
+        # bin the measured scan into the table's NDIRS absolute bearings
+        ranges = np.asarray(scan.ranges, dtype=np.float32)
+        bear = scan.angle_min + np.arange(ranges.size) * scan.angle_increment
+        meas = np.full(self.NDIRS, self.NOHIT, dtype=np.float32)
+        bins = ((bear + math.pi) / (2 * math.pi / self.NDIRS)).astype(int) \
+            % self.NDIRS
+        good = np.isfinite(ranges) & (ranges > scan.range_min) & \
+            (ranges < scan.range_max * 0.99)
+        for k in range(self.NDIRS):
+            sel = good & (bins == k)
+            if sel.any():
+                meas[k] = np.median(ranges[sel])
+
+        table = self.rt_table
+        best_score, best = -1.0, (0.0, 0.0, 0.0)
+        second_score, second = -1.0, None
+        valid = meas < 90.0             # directions with a measured return
+        for k in range(self.NDIRS):                 # yaw hypothesis
+            yaw = -math.pi + k * (2 * math.pi / self.NDIRS)
+            # beam at relative bearing bin i sees absolute direction bin
+            # (i + k + N/2) mod N — both bin scales start at -pi.
+            # (validated by the synthetic self-test in tools/offline_match.py)
+            shifted = np.roll(table, -(k + self.NDIRS // 2), axis=1)
+            # informative = measured a return AND the map has geometry there;
+            # on a partial map, directions the map never saw (NOHIT raycast)
+            # must not count against the true pose
+            informative = valid[None, :] & (shifted < 90.0)
+            agree = (np.abs(shifted - meas[None, :]) < self.RANGE_TOL) \
+                & informative
+            denom = np.maximum(informative.sum(axis=1), 8)
+            scores = agree.sum(axis=1) / denom
+            i = int(np.argmax(scores))
+            s = float(scores[i])
+            cand = (float(self.rt_px[i]), float(self.rt_py[i]), yaw)
+            if s > best_score:
+                if best_score > 0 and _pose_differs(best, cand):
+                    second_score, second = best_score, best
+                best_score, best = s, cand
+            elif s > second_score and _pose_differs(best, cand):
+                second_score, second = s, cand
+
+        # ambiguity: with continuous range agreement over 72 directions, a
+        # 0.06 absolute score gap between distinct poses is already decisive,
+        # and a near-perfect score (>= 0.92) cannot come from a mirrored pose
+        # in a furnished room. Only reject genuinely tied hypotheses.
+        if (best_score < 0.92 and second is not None
+                and second_score > best_score - 0.06):
+            self.get_logger().info(
+                f'scan-match AMBIGUOUS: best={best} ({best_score:.2f}) vs '
+                f'{second} ({second_score:.2f})')
+            return best, 0.0
+        return best, best_score
+
+    def _publish_initialpose(self, pose) -> None:
+        msg = PoseWithCovarianceStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'map'
+        msg.pose.pose.position.x = pose[0]
+        msg.pose.pose.position.y = pose[1]
+        msg.pose.pose.orientation.z = math.sin(pose[2] / 2.0)
+        msg.pose.pose.orientation.w = math.cos(pose[2] / 2.0)
+        msg.pose.covariance[0] = 0.10
+        msg.pose.covariance[7] = 0.10
+        msg.pose.covariance[35] = 0.10
+        self.initialpose_pub.publish(msg)
 
     # --------------------------------------------------------------- motion
     def _spin(self) -> None:
@@ -226,12 +459,16 @@ class KidnapRecovery(Node):
         self.cmd_pub.publish(t)
 
     def _explore(self) -> None:
-        # reactive wander: drive forward while the way ahead is clear, otherwise
-        # rotate to find a new heading. Moves the robot around the room so AMCL
-        # gathers scans from different positions and the filter can converge.
+        # Head into open space: steer toward the most open forward heading and
+        # drive when the way ahead is clear; if boxed in, rotate to escape. This
+        # traverses the room quickly so AMCL gets a diverse, disambiguating scan
+        # sequence and re-converges fast.
         t = Twist()
         if self.front_clear:
             t.linear.x = self.drive_speed
+            # proportional steer toward the open heading (capped)
+            t.angular.z = max(-self.spin_speed,
+                              min(self.spin_speed, 1.5 * self.open_heading))
         else:
             t.angular.z = self.spin_speed
         self.cmd_pub.publish(t)

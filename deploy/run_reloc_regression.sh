@@ -3,7 +3,7 @@
 # Headless kidnapped-robot relocalization regression, CLI, CI-friendly.
 # Launches the (light, nav-free) sim + AMCL + recovery + injector, runs N kidnap
 # trials, and exits 0 iff >= 90% relocalize within 30 s and 2 m. No GUI required.
-set -euo pipefail
+set -eo pipefail
 
 source /opt/ros/jazzy/setup.bash
 source /ros_ws/install/setup.bash

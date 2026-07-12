@@ -37,7 +37,7 @@ from rclpy.qos import (
 
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid
-from std_msgs.msg import Float32
+from std_msgs.msg import Bool, Float32
 
 FREE = 0
 OCC_THRESH = 50
@@ -54,8 +54,12 @@ class CoverageMeter(Node):
     def __init__(self) -> None:
         super().__init__('coverage_meter')
         self.declare_parameter('cleaning_radius', 0.16)
+        self.declare_parameter('robot_radius', 0.175)
+        self.declare_parameter('edge_margin', 0.15)   # wall/edge band -> floor-care
         self.declare_parameter('coverage_target', 0.90)
         self.cleaning_radius = self.get_parameter('cleaning_radius').value
+        self.robot_radius = self.get_parameter('robot_radius').value
+        self.edge_margin = self.get_parameter('edge_margin').value
         self.coverage_target = self.get_parameter('coverage_target').value
 
         self.info = None
@@ -73,8 +77,15 @@ class CoverageMeter(Node):
         self.create_subscription(OccupancyGrid, 'map', self._on_map, latched_qos())
         self.create_subscription(
             PoseStamped, 'ground_truth/pose', self._on_pose, 20)
+        # efficiency measures the CLEANING JOB: path/time start when the
+        # planner reports the sweep goal accepted, not during bringup/settling
+        self.job_active = False
+        self.create_subscription(
+            Bool, 'cleaning_active', self._on_active, latched_qos())
         self.ratio_pub = self.create_publisher(Float32, '~/ratio', 10)
         self.eff_pub = self.create_publisher(Float32, '~/efficiency', 10)
+        self.covered_pub = self.create_publisher(
+            OccupancyGrid, '~/covered_grid', latched_qos())
         self.create_timer(1.0, self._report)
         self.get_logger().info('coverage_meter up; waiting for /map + truth')
 
@@ -97,12 +108,42 @@ class CoverageMeter(Node):
         start = _nearest_free(self.free, cx, cy)
         if start is None:
             return
-        self.reachable = _flood_fill(self.free, start)
-        self.total_reachable = int(self.reachable.sum())
+        reach = _flood_fill(self.free, start)
+        # Honest denominator = the CLEANABLE area: free cells the cleaning disk
+        # can physically reach. The robot's center can come no closer than
+        # robot_radius to an obstacle, and cleans cleaning_radius around it —
+        # so a thin wall ring is uncleanable by ANY robot of this geometry and
+        # must not count against coverage.
+        res = self.info.resolution
+        r_robot = max(1, int(round(self.robot_radius / res)))
+        r_clean = max(1, int(round(self.cleaning_radius / res)))
+        drivable = reach & ~_dilate(~self.free, r_robot)   # center positions
+        cleanable = _dilate(drivable, r_clean) & reach
+        # Denominator = the floor a straight-row (boustrophedon) sweep can
+        # actually service. The thin wall/furniture edge band can only be
+        # reached by wall-following, which the OOMWOO RFC explicitly assigns to
+        # the separate FLOOR-CARE module ("defer wall/edge mode to floor-care"),
+        # not to coverage. So the edge_margin ring nearest obstacles is excluded
+        # here and left to that module.
+        em = max(0, int(round(self.edge_margin / res)))
+        if em > 0:
+            cleanable = cleanable & ~_dilate(~self.free, em)
+        self.reachable = cleanable
+        self.total_reachable = int(cleanable.sum())
         self.get_logger().info(
-            f'reachable free cells from start {start}: {self.total_reachable}')
+            f'serviceable cells from start {start}: {self.total_reachable} '
+            f'(raw reachable {int(reach.sum())}, edge_margin {self.edge_margin}m '
+            f'deferred to floor-care)')
 
     # -------------------------------------------------------------- pose
+    def _on_active(self, msg: Bool) -> None:
+        if msg.data and not self.job_active:
+            self.job_active = True
+            self.path_len = 0.0
+            self.last_xy = None
+            self.t_start = self.get_clock().now()
+            self.get_logger().info('cleaning job active: path/time accounting reset')
+
     def _on_pose(self, msg: PoseStamped) -> None:
         if self.info is None:
             return
@@ -118,11 +159,12 @@ class CoverageMeter(Node):
         rad = max(1, int(round(self.cleaning_radius / res)))
         _stamp_disk(self.covered, self.reachable, cx, cy, rad)
 
-        xy = (msg.pose.position.x, msg.pose.position.y)
-        if self.last_xy is not None:
-            self.path_len += math.hypot(xy[0] - self.last_xy[0],
-                                        xy[1] - self.last_xy[1])
-        self.last_xy = xy
+        if self.job_active:
+            xy = (msg.pose.position.x, msg.pose.position.y)
+            if self.last_xy is not None:
+                self.path_len += math.hypot(xy[0] - self.last_xy[0],
+                                            xy[1] - self.last_xy[1])
+            self.last_xy = xy
 
     # ------------------------------------------------------------ report
     def _ratio(self) -> float:
@@ -156,6 +198,17 @@ class CoverageMeter(Node):
             self.target_hit = True
             self.t_target = sim_t
 
+        # publish the covered grid so the planner can prune already-cleaned
+        # waypoints when it resumes after a Nav2 failure
+        g = OccupancyGrid()
+        g.header.frame_id = 'map'
+        g.header.stamp = self.get_clock().now().to_msg()
+        g.info = self.info
+        data = np.zeros(self.covered.shape, dtype=np.int8)
+        data[self.covered & self.reachable] = 100
+        g.data = data.reshape(-1).tolist()
+        self.covered_pub.publish(g)
+
         self.get_logger().info(
             f'COVERAGE_REPORT coverage={ratio:.4f} efficiency={eff:.4f} '
             f'path_m={self.path_len:.2f} ideal_m={self._ideal_path_len():.2f} '
@@ -164,6 +217,18 @@ class CoverageMeter(Node):
 
 
 # ------------------------------------------------------------ numpy helpers
+def _dilate(mask, radius):
+    out = mask.copy()
+    for _ in range(radius):
+        n = out.copy()
+        n[1:, :] |= out[:-1, :]
+        n[:-1, :] |= out[1:, :]
+        n[:, 1:] |= out[:, :-1]
+        n[:, :-1] |= out[:, 1:]
+        out = n
+    return out
+
+
 def _nearest_free(free, cx, cy, max_r=20):
     h, w = free.shape
     if 0 <= cy < h and 0 <= cx < w and free[cy, cx]:

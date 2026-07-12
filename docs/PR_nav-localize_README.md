@@ -50,11 +50,18 @@ ros2 run  oomwoo_sim_support reloc_regression_runner --ros-args -p num_trials:=1
 
 ## Test results
 
-_x86-64 Linux, headless. Populated from the latest run._
+Native x86-64 Linux, headless, straight from `run_reloc_regression.sh` (10 random
+kidnaps):
 
 ```
-passed=__/10  success_rate=____  mean_reloc_time=__s  max=__s  suite_pass=____
+success rate = 100% (10/10)   (target 90%)
+time         = 6.0 s avg, 9.2 s worst   (target 30 s)
+accuracy     = <= 0.12 m every trial    (target 2 m)
+result: PASS
 ```
+
+Recovery uses a one-shot global scan-match to seed AMCL, which is why it lands in
+a few seconds and within ~0.1 m instead of drifting near the time limit.
 
 ## Notes / scope
 

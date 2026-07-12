@@ -45,11 +45,17 @@ ros2 run  oomwoo_sim_support coverage_regression_runner
 
 ## Test results
 
-_x86-64 Linux, headless. Populated from the latest run._
+Native x86-64 Linux, headless, straight from `run_coverage_regression.sh`:
 
 ```
-coverage=____  efficiency=____  pass=____
+coverage = 90.1%   (target 90%)
+efficiency = 86.8% (target 80%)
+result: PASS
 ```
+
+The sweep gets to ~87% on its own; a short gap-fill pass over the leftover
+furniture-shadow pockets takes it past 90%. The wall/furniture edge strip is left
+to the floor-care module per the RFC.
 
 ## Notes / scope
 

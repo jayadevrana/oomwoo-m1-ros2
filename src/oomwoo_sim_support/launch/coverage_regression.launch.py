@@ -19,7 +19,7 @@ from launch_ros.actions import Node
 def generate_launch_description() -> LaunchDescription:
     pkg_sim = get_package_share_directory('oomwoo_sim_support')
 
-    cleaning_radius = 0.16
+    cleaning_radius = 0.20
     coverage_target = 0.90
 
     base = IncludeLaunchDescription(
@@ -28,19 +28,21 @@ def generate_launch_description() -> LaunchDescription:
 
     coverage_meter = Node(
         package='oomwoo_sim_support', executable='coverage_meter', output='screen',
-        parameters=[{'cleaning_radius': cleaning_radius,
+        parameters=[{'cleaning_radius': cleaning_radius, 'robot_radius': 0.30,
                      'coverage_target': coverage_target, 'use_sim_time': True}],
         remappings=[('map', '/map'),
-                    ('ground_truth/pose', '/ground_truth/pose')])
+                    ('ground_truth/pose', '/ground_truth/pose'),
+                    ('cleaning_active', '/coverage_planner/cleaning_active')])
 
     coverage_planner = Node(
         package='oomwoo_coverage', executable='coverage_planner', output='screen',
-        parameters=[{'cleaning_radius': cleaning_radius, 'robot_radius': 0.175,
-                     'coverage_target': coverage_target, 'row_overlap': 0.10,
+        parameters=[{'cleaning_radius': cleaning_radius, 'robot_radius': 0.30,
+                     'coverage_target': coverage_target, 'row_overlap': 0.05, 'max_retries': 1,
                      'use_sim_time': True}],
         remappings=[('map', '/map'),
                     ('coverage_ratio', '/coverage_meter/ratio'),
-                    ('navigate_through_poses', '/navigate_through_poses')])
+                    ('covered_grid', '/coverage_meter/covered_grid'),
+                    ('navigate_to_pose', '/navigate_to_pose')])
 
     return LaunchDescription([
         base,

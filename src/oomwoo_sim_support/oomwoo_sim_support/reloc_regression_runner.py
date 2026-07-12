@@ -62,22 +62,33 @@ class RelocRunner(Node):
         self.settle_s = self.get_parameter('settle_s').value
         self.report_path = self.get_parameter('report_path').value
 
+        self.declare_parameter('diverge_trace', 0.8)   # confirm reinit scattered
+        self.declare_parameter('converge_trace', 0.6)  # particle cloud collapsed
+        self.diverge_trace = self.get_parameter('diverge_trace').value
+        self.converge_trace = self.get_parameter('converge_trace').value
+
         self.amcl = None            # latest (x, y, trace)
-        self.target = None          # latest injector target pose (x, y)
+        self.truth = None           # latest ground-truth (x, y)  [teleport-aware]
         self.create_subscription(
             PoseWithCovarianceStamped, '/amcl_pose', self._on_amcl, _amcl_qos())
         self.create_subscription(
-            PoseStamped, '/kidnap_injector/target_pose', self._on_target, 10)
+            PoseStamped, '/ground_truth/pose', self._on_truth, 10)
         self.kidnap_cli = self.create_client(
             Trigger, '/kidnap_injector/kidnap')
 
     def _on_amcl(self, msg):
         p = msg.pose.pose.position
         c = msg.pose.covariance
-        self.amcl = (p.x, p.y, float(c[0] + c[7] + c[35]))
+        self.amcl = (p.x, p.y, float(c[0] + c[7]))  # xy-only covariance (see recovery node)
 
-    def _on_target(self, msg):
-        self.target = (msg.pose.position.x, msg.pose.position.y)
+    def _on_truth(self, msg):
+        self.truth = (msg.pose.position.x, msg.pose.position.y)
+
+    def _err(self):
+        if self.amcl is None or self.truth is None:
+            return None
+        return math.hypot(self.amcl[0] - self.truth[0],
+                          self.amcl[1] - self.truth[1])
 
     # --- helpers ------------------------------------------------------------
     def _spin(self, dt):
@@ -127,41 +138,55 @@ class RelocRunner(Node):
         return 0 if summary['suite_pass'] else 1
 
     def _trial(self, i: int) -> dict:
-        self.target = None
-        # 1) kidnap
+        # 1) kidnap (teleport + trigger recovery)
         fut = self.kidnap_cli.call_async(Trigger.Request())
         self._wait(lambda: fut.done(), 10.0)
         if not (fut.done() and fut.result() and fut.result().success):
             self.get_logger().warn(f'trial {i}: kidnap call failed')
             return {'trial': i, 'success': False, 'time_s': None,
                     'err_m': None, 'reason': 'kidnap_call_failed'}
-        self._wait(lambda: self.target is not None, 5.0)
-        target = self.target
-        # score recovery time on the SIM clock (the RFC's 30 s budget) — wall
-        # clock would unfairly penalize hosts running the sim below realtime
+        # score on the SIM clock (RFC's 30 s budget); wall clock would penalize
+        # hosts running the sim below realtime
         t0_sim = self.get_clock().now()
 
-        # 2) wait for re-convergence: amcl trace low AND close to truth
-        def converged():
-            if self.amcl is None or target is None:
+        # 2) confirm the recovery actually engaged: AMCL global re-init scatters
+        #    particles, so the covariance trace spikes. This gates out the false
+        #    positive where the pre-kidnap pose is coincidentally near the target.
+        diverged = self._wait(
+            lambda: self.amcl is not None and self.amcl[2] >= self.diverge_trace,
+            12.0)
+
+        # 3) wait for genuine re-convergence: the particle cloud has COLLAPSED
+        #    (covariance trace below converge_trace) AND its estimate is within
+        #    2 m of the (teleport-aware) ground truth, sustained ~1.5 s. Both
+        #    conditions matter: right after a global re-init the scattered-cloud
+        #    mean can sit <2 m from a target by chance (high trace rules that
+        #    out), and a collapsed cloud can be confidently wrong (err rules
+        #    that out).
+        hold = {'t': None}
+
+        def reconverged():
+            e = self._err()
+            if (e is None or e > self.dist_ok
+                    or self.amcl[2] > self.converge_trace):
+                hold['t'] = None
                 return False
-            err = math.hypot(self.amcl[0] - target[0], self.amcl[1] - target[1])
-            return self.amcl[2] <= 0.5 and err <= self.dist_ok
-        ok = self._wait(converged, self.trial_timeout)
+            if hold['t'] is None:
+                hold['t'] = self.get_clock().now()
+            return (self.get_clock().now() - hold['t']).nanoseconds * 1e-9 >= 1.5
+
+        ok = self._wait(reconverged, self.trial_timeout)
         dt = (self.get_clock().now() - t0_sim).nanoseconds * 1e-9
-        err = (math.hypot(self.amcl[0] - target[0], self.amcl[1] - target[1])
-               if (self.amcl and target) else None)
-        # success requires convergence within the RFC time budget too
-        success = bool(ok and dt <= self.reco_time and err is not None
-                       and err <= self.dist_ok)
+        err = self._err()
+        success = bool(diverged and ok and dt <= self.reco_time
+                       and err is not None and err <= self.dist_ok)
         self.get_logger().info(
             f'RELOC_RESULT trial={i} success={success} time={dt:.1f}s '
-            f'err={err:.2f}m target=({target[0]:.2f},{target[1]:.2f})'
-            if err is not None else
-            f'RELOC_RESULT trial={i} success=False (no pose)')
+            f'err={err if err is None else round(err, 2)}m '
+            f'diverged={diverged}')
         return {'trial': i, 'success': success, 'time_s': round(dt, 1),
                 'err_m': round(err, 2) if err is not None else None,
-                'target': target}
+                'diverged': diverged}
 
 
 def main(args=None) -> None:

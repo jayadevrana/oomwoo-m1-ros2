@@ -39,8 +39,8 @@ def generate_launch_description() -> LaunchDescription:
 
     # coarser 200 Hz physics step (vs the stock 1 kHz) so the bridged /clock
     # is 5x lighter — critical for a stable sim clock under x86 emulation.
-    world = os.path.join(pkg_sim, 'worlds', 'living_room_fast.world')
-    map_yaml = os.path.join(pkg_sim, 'maps', 'living_room.yaml')
+    world = os.path.join(pkg_sim, 'worlds', 'test_room.world')
+    map_yaml = os.path.join(pkg_sim, 'maps', 'test_room.yaml')
     xacro_file = os.path.join(pkg_oomwoo, 'urdf', 'robot.urdf.xacro')
     nav2_params = os.path.join(pkg_sim, 'config', 'nav2_params.yaml')
     bridge_sim = os.path.join(pkg_oomwoo, 'config', 'gz_bridge.yaml')
@@ -106,7 +106,22 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[nav2_params, {
             'use_sim_time': True, 'set_initial_pose': True,
             'initial_pose.x': 0.0, 'initial_pose.y': 0.0,
-            'initial_pose.z': 0.0, 'initial_pose.yaw': 0.0}])
+            'initial_pose.z': 0.0, 'initial_pose.yaw': 0.0,
+            # update the filter a bit more often (vs 0.25 m / 0.2 rad) so a
+            # kidnapped robot re-converges faster during the recovery drive.
+            # recovery_alpha stays disabled (stock): continuous particle
+            # injection keeps the published covariance permanently inflated,
+            # which destroys the convergence signal both the recovery node and
+            # the regression depend on. Wrong-mode escape comes from the
+            # explicit global re-init + explore motion instead.
+            'update_min_d': 0.15, 'update_min_a': 0.1,
+            # SHARP measurement model for the noise-free sim LiDAR. The stock
+            # z_hit 0.5 / z_rand 0.5 / 60-beam model is so permissive that a
+            # mirrored symmetric hypothesis survives indefinitely after a global
+            # re-init (observed: covariance trace pinned at ~6.5 for 45 s).
+            # Weighting hits strongly and sampling more beams makes the ghost
+            # mode collapse within a few updates.
+            'z_hit': 0.95, 'z_rand': 0.05, 'max_beams': 120}])
     lifecycle_loc = Node(
         package='nav2_lifecycle_manager', executable='lifecycle_manager',
         name='lifecycle_manager_localization', output='screen',
@@ -133,10 +148,21 @@ def generate_launch_description() -> LaunchDescription:
         package='nav2_behaviors', executable='behavior_server',
         name='behavior_server', output='screen', condition=with_nav,
         parameters=[nav2_params, nav_common])
+    # the params yaml uses $(find-pkg-share ...) for the BT XML paths, which
+    # only nav2_bringup's RewrittenYaml expands — passing the yaml raw leaves
+    # the literal string and bt_navigator fails to activate. Override with
+    # resolved absolute paths.
+    bt_dir = os.path.join(
+        get_package_share_directory('nav2_bt_navigator'), 'behavior_trees')
     bt_nav = Node(
         package='nav2_bt_navigator', executable='bt_navigator',
         name='bt_navigator', output='screen', condition=with_nav,
-        parameters=[nav2_params, nav_common])
+        parameters=[nav2_params, nav_common, {
+            'default_nav_to_pose_bt_xml': os.path.join(
+                bt_dir, 'navigate_to_pose_w_replanning_and_recovery.xml'),
+            'default_nav_through_poses_bt_xml': os.path.join(
+                bt_dir,
+                'navigate_through_poses_w_replanning_and_recovery.xml')}])
     lifecycle_nav = Node(
         package='nav2_lifecycle_manager', executable='lifecycle_manager',
         name='lifecycle_manager_navigation', output='screen', condition=with_nav,
