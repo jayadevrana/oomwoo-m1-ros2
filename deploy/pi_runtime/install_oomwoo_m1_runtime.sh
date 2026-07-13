@@ -8,7 +8,7 @@
 # is skipped on purpose: it pulls Gazebo/ros_gz, which the onboard runtime
 # deliberately omits. Also installs the fixed simulated MCU serial helper and
 # the RSS/PSS/CPU baseline tools next to the workspace.
-set -euo pipefail
+set -eo pipefail   # no -u: ROS setup.bash refs unbound vars
 
 WORKSPACE="${WORKSPACE:-$HOME/oomwoo_runtime_ws}"
 PKG_REPO="${PKG_REPO:-https://github.com/jayadevrana/oomwoo-m1-ros2}"

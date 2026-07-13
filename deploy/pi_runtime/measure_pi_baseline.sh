@@ -17,14 +17,16 @@ set -eo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source /opt/ros/jazzy/setup.bash
-[ -f /ros_ws/install/setup.bash ] && source /ros_ws/install/setup.bash
-[ -f "$HOME/oomwoo-dev/install/setup.bash" ] && source "$HOME/oomwoo-dev/install/setup.bash"
+# source whichever overlay workspace holds the robot description + M1 behaviours
+[ -f "$HOME/oomwoo_runtime_ws/install/setup.bash" ] && source "$HOME/oomwoo_runtime_ws/install/setup.bash"  # Pi runtime
+[ -f /ros_ws/install/setup.bash ] && source /ros_ws/install/setup.bash                                      # makerspet image
+[ -f "$HOME/oomwoo-dev/install/setup.bash" ] && source "$HOME/oomwoo-dev/install/setup.bash"                # dev box
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-88} ROS_LOCALHOST_ONLY=1
 
 LAUNCH="$HERE/oomwoo_runtime.launch.py"
 MEASURE="$HERE/measure_baseline.py"
 SERIAL="$HERE/oomwoo_sim_mcu_serial.py"
-BAG=${BAG:-$HOME/oomwoo-dev/m2_scan_bag_clean}
+BAG=${BAG:-$HERE/scan_bag}   # the clean 5 Hz bag bundled next to this script
 OUT=${OUT:-/tmp/pi_baseline}
 SETTLE=${SETTLE:-18}
 WINDOW=${WINDOW:-25}

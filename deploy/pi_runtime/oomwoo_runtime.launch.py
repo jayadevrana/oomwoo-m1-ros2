@@ -28,12 +28,15 @@ def _setup(context, *_):
     mode = LaunchConfiguration('mode').perform(context)
     robot_model = LaunchConfiguration('robot_model').perform(context) or 'oomwoo_one'
     use_sim_time = LaunchConfiguration('use_sim_time').perform(context) == 'true'
-    pkg_sim = get_package_share_directory('oomwoo_sim_support')
+    # config lives beside this launch file so the onboard runtime has NO
+    # dependency on oomwoo_sim_support (which pulls Gazebo and isn't installed
+    # on the robot).
+    here = os.path.dirname(os.path.abspath(__file__))
     pkg_robot = get_package_share_directory(robot_model)
     nav2_params = LaunchConfiguration('nav2_params').perform(context) \
-        or os.path.join(pkg_sim, 'config', 'nav2_params.yaml')
+        or os.path.join(here, 'config', 'nav2_params.yaml')
     map_yaml = LaunchConfiguration('map').perform(context) \
-        or os.path.join(pkg_sim, 'maps', 'test_room.yaml')
+        or os.path.join(here, 'config', 'test_room.yaml')
     common = {'use_sim_time': use_sim_time}
 
     robot_description = ParameterValue(

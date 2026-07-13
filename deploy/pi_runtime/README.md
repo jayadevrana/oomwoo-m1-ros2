@@ -16,22 +16,28 @@ for. Native Ubuntu 24.04 / ROS 2 Jazzy — no Docker, no Gazebo on the robot.
 | `install_oomwoo_m1_runtime.sh` | Adds the M1 behaviours + these tools on top of xbattlax's `install_oomwoo_runtime_jazzy.sh`. |
 | `oomwoo_sim_mcu_serial.py` | xbattlax's simulated MCU serial, **with two bug fixes** (below). |
 
-## Fixes to the scaffold (validation findings)
+## Scaffold validation findings
 
-xbattlax's `ubuntu/tools/oomwoo_sim_mcu_serial.py` crashes on startup as
-documented (run standalone, before a ROS consumer connects). Two bugs, both
-fixed in the copy here and worth upstreaming:
+Validated on a native ARM64 Ubuntu 24.04 host (the same OS + arch a Pi 4 runs).
+The scaffold is sound in shape; three concrete bugs stop it running as-is, all
+fixed here and worth upstreaming:
 
-1. **Startup `EIO` crash.** It closes the PTY slave fd immediately, so with no
-   consumer attached the master gets `POLLHUP`; `select()` then reports it
-   readable and `os.read`/`os.write` raise `OSError: [Errno 5]`. Fix: keep the
-   slave fd open so the line stays alive whether or not a consumer is attached.
-2. **Self-echo feedback loop.** The PTY is in cooked mode, so every heartbeat
-   the tool writes is echoed back and re-read as a phantom command, which it
-   then acks. Fix: put the PTY in raw mode. Result: clean heartbeats, exactly
-   one ack per real command.
+1. **`install_oomwoo_runtime_jazzy.sh` aborts before it builds.** `build_workspace`
+   runs under `set -u` (from the script's `set -euo pipefail`) and then sources
+   `/opt/ros/jazzy/setup.bash`, which references the unbound `AMENT_TRACE_SETUP_FILES`
+   → the script exits with "unbound variable" and **nothing is built**. Fix:
+   drop `-u`, or `set +u` around the ROS source. (Once bypassed, all 10 runtime
+   repos build cleanly on ARM — so it's only the script, not the packages.)
+2. **`oomwoo_sim_mcu_serial.py` startup `EIO` crash.** It closes the PTY slave
+   fd immediately, so with no consumer attached the master gets `POLLHUP`;
+   `select()` reports it readable and `os.read`/`os.write` raise `OSError:
+   [Errno 5]`. Fix: keep the slave fd open.
+3. **`oomwoo_sim_mcu_serial.py` self-echo loop.** The PTY is in cooked mode, so
+   every heartbeat it writes is echoed back and re-read as a phantom command,
+   which it then acks. Fix: raw mode. Result: clean heartbeats, one ack per
+   real command.
 
-The install script and the plan document otherwise check out and are used as-is.
+The `pi4_4gb_runtime_plan.md` and package selection otherwise check out.
 
 ## Measuring the baseline (no robot attached)
 
@@ -56,25 +62,41 @@ RSS = resident set; **PSS** = proportional set size (the honest figure when
 nodes share libraries — use this against the 4 GB / 2 GB targets). CPU% is
 summed across processes over the window.
 
-The pipeline is validated end-to-end (nav lifecycle reaches "active", SLAM maps
-from the 5 Hz bag). **x86-64 dry-run** — the RAM/PSS figures are representative
-of the Pi (same arch family + packages); CPU% will be higher on the Pi's slower
-Cortex-A72:
+Measured on **native ARM64 Ubuntu 24.04 / ROS 2 Jazzy** (GCP `t2a-standard-2`,
+Ampere Altra — same OS, arch and apt ROS packages a Pi 4 runs). nav lifecycle
+reaches "active"; SLAM maps from the 5 Hz bag. RAM/PSS is representative of the
+Pi 4 4GB; **CPU% is optimistic** — the Ampere Altra core is faster than a Pi's
+Cortex-A72, so treat CPU as a lower bound and confirm it on the board.
 
-| Phase | Procs | RSS (MB) | PSS (MB) | CPU % |
+| Phase | Procs | RSS (MB) | **PSS (MB)** | CPU % |
 |---|---|---|---|---|
-| idle (rsp + MCU serial) | 5 | 96 | 70 | 0.1 |
-| slam (+ slam_toolbox @5 Hz) | 9 | 292 | 172 | 8.6 |
-| nav (+ AMCL + Nav2 + M1 behaviours) | 20 | 935 | 490 | 93 |
+| idle (rsp + MCU serial) | 5 | 89 | **64** | 0.0 |
+| slam (+ slam_toolbox @5 Hz) | 9 | 276 | **166** | 5.0 |
+| nav (+ AMCL + Nav2 + both M1 behaviours) | 20 | 913 | **491** | 59 |
 
-_Pi 4 4GB numbers: run `measure_pi_baseline.sh` on the board — the script is the
-same. This table is refreshed from `baseline_report.json`._
+Top RAM consumers in the full (nav) graph, PSS:
 
-Early read against the 4 GB → 2 GB target: onboard **SLAM** costs ~170 MB PSS
-over the ~70 MB floor; the **full stack with everything loaded** is ~490 MB PSS
-— comfortably inside 2 GB with headroom, so the 2 GB target looks reachable
-without a C++/Rust port. The next lever (per the plan) is ROS 2 composition to
-collapse the ~20 nav processes.
+| Node | PSS (MB) | | Node | PSS (MB) |
+|---|---|---|---|---|
+| coverage_planner (M1) | 56 | | controller_server | 27 |
+| kidnap_recovery (M1) | 51 | | behavior_server | 24 |
+| bt_navigator | 46 | | amcl | 21 |
+| planner_server | 30 | | map_server | 21 |
+
+**Verdict on the 4 GB → 2 GB target.** The full stack — localization + the
+trimmed Nav2 + both M1 behaviours loaded at once — is **~491 MB PSS / ~910 MB
+RSS**, leaving ~7 GB free on this 8 GB host and well under 2 GB. The 2 GB target
+is reachable **without a C++/Rust rewrite**. Two observations for the reduction
+work:
+
+- The biggest single consumers are the **two M1 Python behaviours** (~50 MB PSS
+  each, numpy-backed) — more than any individual C++ Nav2 server. If RAM ever
+  gets tight, porting those is a bigger lever than touching Nav2.
+- Next, per the plan: **ROS 2 composition** to collapse the ~20 separate nav
+  processes into a few component containers removes per-process overhead.
+
+Re-run on the board with `measure_pi_baseline.sh`; the script and this table's
+JSON (`baseline_report.json`) are identical there.
 
 Read PSS against the budget: `idle` is the floor, `slam` adds onboard mapping,
 `nav` is everything loaded at once (localization + the trimmed Nav2 stack + both
