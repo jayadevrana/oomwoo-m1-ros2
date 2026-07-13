@@ -12,6 +12,11 @@ scores the run against the cleaning-jobs acceptance metrics:
 The run ends when coverage reaches the target, or plateaus (no meaningful gain
 for PLATEAU_S of sim time), or MAX_SIM_TIME is hit. Emits a machine-parseable
 COVERAGE_SUMMARY log line, writes a JSON report, and exits 0 iff the run passes.
+
+If the coverage_meter flags the simulation as unstable (ground-truth pose
+teleports — seen on Docker-under-WSL2 and emulated hosts), the run aborts
+immediately with end_reason "sim_unstable" and exit code 2: metrics from an
+unstable sim are meaningless and must not be reported as a plain pass/fail.
 Intended to be launched alongside coverage_regression.launch.py.
 """
 
@@ -22,8 +27,14 @@ import time
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+)
 
-from std_msgs.msg import Float32
+from std_msgs.msg import Bool, Float32
 
 
 class CoverageRunner(Node):
@@ -47,16 +58,28 @@ class CoverageRunner(Node):
         self.efficiency = 0.0
         self.best = 0.0
         self.last_gain_sim_t = None
+        self.sim_unstable = False
 
+        # sim_unstable is published latched; a latched sub can't miss it even if
+        # the flag was raised before this runner finished starting up.
+        latched = QoSProfile(
+            depth=1, history=QoSHistoryPolicy.KEEP_LAST,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(Float32, '/coverage_meter/ratio', self._on_cov, 10)
         self.create_subscription(
             Float32, '/coverage_meter/efficiency', self._on_eff, 10)
+        self.create_subscription(
+            Bool, '/coverage_meter/sim_unstable', self._on_unstable, latched)
 
     def _on_cov(self, msg):
         self.coverage = float(msg.data)
 
     def _on_eff(self, msg):
         self.efficiency = float(msg.data)
+
+    def _on_unstable(self, msg):
+        self.sim_unstable = self.sim_unstable or bool(msg.data)
 
     def _sim_now(self) -> float:
         return self.get_clock().now().nanoseconds * 1e-9
@@ -76,6 +99,9 @@ class CoverageRunner(Node):
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.5)
             sim_t = self._sim_now() - start_sim
+            if self.sim_unstable:
+                # no point measuring further — the numbers are already invalid
+                break
             if self.coverage > self.best + self.plateau_eps:
                 self.best = self.coverage
                 self.last_gain_sim_t = self._sim_now()
@@ -89,13 +115,17 @@ class CoverageRunner(Node):
                 reason = 'max_time'
                 break
 
+        if self.sim_unstable:
+            reason = 'sim_unstable'
         result = {
             'coverage': round(self.coverage, 4),
             'coverage_target': self.cov_target,
             'efficiency': round(self.efficiency, 4),
             'efficiency_target': self.eff_target,
             'end_reason': reason,
-            'pass': bool(self.coverage >= self.cov_target
+            'sim_unstable': self.sim_unstable,
+            'pass': bool(not self.sim_unstable
+                         and self.coverage >= self.cov_target
                          and self.efficiency >= self.eff_target),
         }
         try:
@@ -103,6 +133,15 @@ class CoverageRunner(Node):
                 json.dump(result, f, indent=2)
         except OSError as e:
             self.get_logger().warn(f'could not write report: {e}')
+        if self.sim_unstable:
+            # Invalid measurement, NOT a behavior failure: distinct exit code
+            # so CI/users don't read a physics glitch as a coverage regression.
+            self.get_logger().error(
+                'COVERAGE_SUMMARY MEASUREMENT INVALID (sim unstable: ground-'
+                'truth pose teleported). This host cannot run the sim '
+                'faithfully — use a native x86-64 Linux machine or CI runner. '
+                f'coverage={result["coverage"]:.4f} (informational only)')
+            return 2
         self.get_logger().info(
             f'COVERAGE_SUMMARY coverage={result["coverage"]:.4f} '
             f'efficiency={result["efficiency"]:.4f} reason={reason} '

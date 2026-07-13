@@ -118,10 +118,17 @@ class RelocRunner(Node):
         passed = sum(1 for r in results if r['success'])
         rate = passed / len(results) if results else 0.0
         times = [r['time_s'] for r in results if r['success']]
+        mean_t = (sum(times) / len(times)) if times else None
+        # spread matters as much as the mean: a suite whose times vary wildly
+        # between runs/hosts is not yet a trustworthy CI gate.
+        std_t = (math.sqrt(sum((t - mean_t) ** 2 for t in times) / len(times))
+                 if times and len(times) > 1 else 0.0 if times else None)
         summary = {
             'trials': len(results), 'passed': passed, 'success_rate': rate,
             'success_rate_target': self.rate_ok,
-            'mean_reloc_time_s': (sum(times) / len(times)) if times else None,
+            'mean_reloc_time_s': mean_t,
+            'std_reloc_time_s': std_t,
+            'min_reloc_time_s': min(times) if times else None,
             'max_reloc_time_s': max(times) if times else None,
             'suite_pass': rate >= self.rate_ok, 'results': results,
         }

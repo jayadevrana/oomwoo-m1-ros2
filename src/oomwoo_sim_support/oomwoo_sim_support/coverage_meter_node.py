@@ -57,10 +57,20 @@ class CoverageMeter(Node):
         self.declare_parameter('robot_radius', 0.175)
         self.declare_parameter('edge_margin', 0.15)   # wall/edge band -> floor-care
         self.declare_parameter('coverage_target', 0.90)
+        # Sanity gate: the largest plausible ground-truth step between two
+        # consecutive pose samples. The robot tops out at 0.2 m/s, so anything
+        # near this bound is a teleport — a symptom of an unstable simulation
+        # (seen on Docker-under-WSL2 / emulated hosts), not of driving.
+        self.declare_parameter('max_pose_step_m', 0.5)
+        self.declare_parameter('max_pose_jumps', 3)
         self.cleaning_radius = self.get_parameter('cleaning_radius').value
         self.robot_radius = self.get_parameter('robot_radius').value
         self.edge_margin = self.get_parameter('edge_margin').value
         self.coverage_target = self.get_parameter('coverage_target').value
+        self.max_pose_step = self.get_parameter('max_pose_step_m').value
+        self.max_pose_jumps = self.get_parameter('max_pose_jumps').value
+        self.pose_jumps = 0
+        self.sim_unstable = False
 
         self.info = None
         self.free: Optional[np.ndarray] = None       # bool[H,W]
@@ -84,6 +94,8 @@ class CoverageMeter(Node):
             Bool, 'cleaning_active', self._on_active, latched_qos())
         self.ratio_pub = self.create_publisher(Float32, '~/ratio', 10)
         self.eff_pub = self.create_publisher(Float32, '~/efficiency', 10)
+        self.unstable_pub = self.create_publisher(
+            Bool, '~/sim_unstable', latched_qos())
         self.covered_pub = self.create_publisher(
             OccupancyGrid, '~/covered_grid', latched_qos())
         self.create_timer(1.0, self._report)
@@ -162,8 +174,30 @@ class CoverageMeter(Node):
         if self.job_active:
             xy = (msg.pose.position.x, msg.pose.position.y)
             if self.last_xy is not None:
-                self.path_len += math.hypot(xy[0] - self.last_xy[0],
-                                            xy[1] - self.last_xy[1])
+                step = math.hypot(xy[0] - self.last_xy[0],
+                                  xy[1] - self.last_xy[1])
+                if step > self.max_pose_step:
+                    # A teleport, not driving. Summing it would destroy the
+                    # path-length denominator (observed: a glitching pose fed
+                    # 1.5e6 m of "path" -> efficiency 0.0001). Count it, skip
+                    # it, and past the threshold declare the measurement
+                    # invalid instead of reporting a confident wrong number.
+                    self.pose_jumps += 1
+                    self.get_logger().warning(
+                        f'ground-truth pose jumped {step:.2f} m between '
+                        f'samples (> {self.max_pose_step} m) — teleport '
+                        f'#{self.pose_jumps}; excluded from path length')
+                    if (not self.sim_unstable
+                            and self.pose_jumps >= self.max_pose_jumps):
+                        self.sim_unstable = True
+                        self.get_logger().error(
+                            'SIM UNSTABLE: ground-truth pose is teleporting. '
+                            'Efficiency cannot be measured in this '
+                            'environment — re-run on a native x86-64 Linux '
+                            'host (Docker on Windows/WSL2 and emulated hosts '
+                            'destabilize Gazebo physics).')
+                else:
+                    self.path_len += step
             self.last_xy = xy
 
     # ------------------------------------------------------------ report
@@ -187,9 +221,10 @@ class CoverageMeter(Node):
         if self.info is None or self.total_reachable == 0:
             return
         ratio = self._ratio()
-        eff = self._efficiency()
+        eff = 0.0 if self.sim_unstable else self._efficiency()
         self.ratio_pub.publish(Float32(data=float(ratio)))
         self.eff_pub.publish(Float32(data=float(min(eff, 1.0))))
+        self.unstable_pub.publish(Bool(data=self.sim_unstable))
 
         sim_t = 0.0
         if self.t_start is not None:
@@ -213,7 +248,8 @@ class CoverageMeter(Node):
             f'COVERAGE_REPORT coverage={ratio:.4f} efficiency={eff:.4f} '
             f'path_m={self.path_len:.2f} ideal_m={self._ideal_path_len():.2f} '
             f'reachable_cells={self.total_reachable} sim_t={sim_t:.1f} '
-            f'target_hit={self.target_hit} t_target={self.t_target}')
+            f'target_hit={self.target_hit} t_target={self.t_target} '
+            f'pose_jumps={self.pose_jumps} sim_unstable={self.sim_unstable}')
 
 
 # ------------------------------------------------------------ numpy helpers

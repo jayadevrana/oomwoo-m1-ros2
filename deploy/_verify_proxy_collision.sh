@@ -40,7 +40,7 @@ for b in txt.split("\npose {"):
 Y0=$(get_y)
 echo "[verify] world=$WORLD  item=$ITEM  spawn=($SX,$SY)"
 echo "[verify] y_before=$Y0"
-( timeout 12 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist \
+( timeout 25 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist \
     '{linear: {x: 0.2}, angular: {z: 0.0}}' > /dev/null 2>&1 ) || true
 sleep 2
 Y1=$(get_y)

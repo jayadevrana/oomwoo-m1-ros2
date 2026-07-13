@@ -12,18 +12,25 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction
+from launch.actions import (
+    DeclareLaunchArgument, IncludeLaunchDescription, TimerAction)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
     pkg_sim = get_package_share_directory('oomwoo_sim_support')
 
+    # pinned by default so the regression gate is reproducible on any machine;
+    # override robot_model:=<pkg> to run the suite against another vacuum.
+    robot_model = LaunchConfiguration('robot_model')
+
     base = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_sim, 'launch', 'sim_bringup.launch.py')),
-        launch_arguments={'with_nav': 'false'}.items())
+        launch_arguments={'with_nav': 'false',
+                          'robot_model': robot_model}.items())
 
     kidnap_recovery = Node(
         package='oomwoo_nav_localize', executable='kidnap_recovery',
@@ -41,12 +48,13 @@ def generate_launch_description() -> LaunchDescription:
     kidnap_injector = Node(
         package='oomwoo_sim_support', executable='kidnap_injector',
         output='screen',
-        parameters=[{'use_sim_time': True, 'robot_model_name': 'oomwoo_one',
+        parameters=[{'use_sim_time': True, 'robot_model_name': robot_model,
                      'world_name': 'default', 'min_jump': 1.5, 'seed': 42}],
         remappings=[('map', '/map'),
                     ('ground_truth/pose', '/ground_truth/pose')])
 
     return LaunchDescription([
+        DeclareLaunchArgument('robot_model', default_value='oomwoo_one'),
         base,
         # start recovery + injector once AMCL is up and localized
         TimerAction(period=20.0, actions=[kidnap_recovery, kidnap_injector]),

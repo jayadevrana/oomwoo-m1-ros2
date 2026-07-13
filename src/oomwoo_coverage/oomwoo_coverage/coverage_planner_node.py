@@ -36,7 +36,7 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav_msgs.msg import OccupancyGrid
 from nav2_msgs.action import NavigateToPose
 from std_msgs.msg import Bool, Float32
@@ -107,6 +107,19 @@ class CoveragePlanner(Node):
         self.gapfill_passes = 0
         self.declare_parameter('max_gapfill', 3)
         self.max_gapfill = self.get_parameter('max_gapfill').value
+        # Wedge escape: when Nav2 gives up on several waypoints in a row the
+        # robot is usually stuck in a pocket the inflated costmap paints lethal
+        # (e.g. between furniture legs) — spin/backup recoveries refuse to move
+        # there, so nothing Nav2-side can free it. Physics can: reverse straight
+        # out with a short open-loop cmd_vel pulse, then resume the sweep.
+        self.declare_parameter('escape_after_skips', 2)
+        self.declare_parameter('escape_sec', 2.5)
+        self.declare_parameter('escape_speed', -0.12)
+        self.escape_after = self.get_parameter('escape_after_skips').value
+        self.escape_sec = self.get_parameter('escape_sec').value
+        self.escape_speed = self.get_parameter('escape_speed').value
+        self.consecutive_skips = 0
+        self.escape_until = None
 
         # --- ROS plumbing -------------------------------------------------
         # Coverage % comes from the coverage_meter (ground-truth based), so this
@@ -129,6 +142,8 @@ class CoveragePlanner(Node):
 
         self.active_pub = self.create_publisher(
             Bool, '~/cleaning_active', latched_qos())
+        # only used by the wedge escape, while no Nav2 goal is active
+        self.cmd_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.nav_client = ActionClient(
             self, NavigateToPose, 'navigate_to_pose')
 
@@ -403,6 +418,7 @@ class CoveragePlanner(Node):
         if status == 4:                 # reached the waypoint
             self.wp_index += 1
             self.wp_retries = 0
+            self.consecutive_skips = 0
         else:
             # aborted/canceled: retry the SAME waypoint a few times (Nav2 may
             # just have been settling); skip only if it stays unreachable
@@ -413,6 +429,7 @@ class CoveragePlanner(Node):
                     f'{self.wp_retries} tries; skipping')
                 self.wp_index += 1
                 self.wp_retries = 0
+                self.consecutive_skips += 1
         if self.wp_index % 10 == 0 and self.wp_retries == 0:
             self.get_logger().info(
                 f'waypoint {self.wp_index}/{len(self.cached_poses)}, '
@@ -448,6 +465,19 @@ class CoveragePlanner(Node):
                 self._start_plan()
             return
 
+        # wedge escape in progress: reverse open-loop, then hand back to Nav2
+        if self.escape_until is not None:
+            tw = Twist()
+            if self.get_clock().now() < self.escape_until:
+                tw.linear.x = self.escape_speed
+                self.cmd_pub.publish(tw)
+                return
+            self.cmd_pub.publish(tw)    # zero twist: stop cleanly
+            self.escape_until = None
+            self.next_send = self.get_clock().now() + rclpy.duration.Duration(
+                seconds=1.0)
+            return
+
         # per-goal watchdog: cancel a waypoint Nav2 is grinding on
         if self.awaiting and self.goal_deadline is not None \
                 and self._elapsed(self.goal_deadline) >= self.goal_timeout:
@@ -457,6 +487,15 @@ class CoveragePlanner(Node):
             else:
                 self.awaiting = False
                 self.wp_retries = self.max_retries    # force skip next result
+        # several skips in a row = wedged in a costmap-lethal pocket; Nav2's
+        # own recoveries refuse to move there, so back straight out ourselves
+        elif not self.awaiting and self.consecutive_skips >= self.escape_after:
+            self.get_logger().warn(
+                f'{self.consecutive_skips} waypoints skipped back-to-back — '
+                f'robot likely wedged; reversing {self.escape_sec}s to escape')
+            self.consecutive_skips = 0
+            self.escape_until = self.get_clock().now() + rclpy.duration.Duration(
+                seconds=self.escape_sec)
         # dispatch the next waypoint once idle and past the cooldown
         elif not self.awaiting \
                 and self.get_clock().now() >= self.next_send:

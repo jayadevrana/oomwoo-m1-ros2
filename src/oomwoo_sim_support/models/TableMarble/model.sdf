@@ -1,0 +1,61 @@
+<?xml version="1.0" ?>
+<!-- OOMWOO override of the stock TableMarble (kaiaai_gazebo).
+
+     Visual: stock .dae, untouched.
+     Collision: authored primitives measured from the mesh's own geometry
+     (4 floor-reaching legs + tabletop/apron slab). Why not the mesh itself:
+     dartsim skips raw SDF mesh collisions headless ("Mesh construction ...
+     not implemented"), and convex_decomposition (V-HACD) bridges the open
+     under-table corridor with phantom hulls - measured: the robot wedged at
+     y=-0.16 mid-table and stayed pinned for 24 s. Primitive legs give exact
+     headless/UI physics parity and let the vacuum clean under the top. -->
+<sdf version="1.5">
+  <model name="table_marble">
+    <static>true</static>
+    <pose>0 0 0.324 0 0 0</pose>
+    <link name="link">
+      <!-- tabletop + apron: world z 0.28..0.48, far above the robot -->
+      <collision name="collision_top">
+        <pose>0 -0.05 0.06 0 0 0</pose>
+        <geometry><box><size>0.52 0.76 0.20</size></box></geometry>
+      </collision>
+      <!-- four legs, measured from the mesh: local x +/-0.185, y -0.315 / +0.215,
+           floor to apron -->
+      <collision name="collision_leg_1">
+        <pose>0.185 -0.315 -0.182 0 0 0</pose>
+        <geometry><box><size>0.05 0.06 0.284</size></box></geometry>
+      </collision>
+      <collision name="collision_leg_2">
+        <pose>-0.185 -0.315 -0.182 0 0 0</pose>
+        <geometry><box><size>0.05 0.06 0.284</size></box></geometry>
+      </collision>
+      <collision name="collision_leg_3">
+        <pose>0.185 0.215 -0.182 0 0 0</pose>
+        <geometry><box><size>0.05 0.06 0.284</size></box></geometry>
+      </collision>
+      <collision name="collision_leg_4">
+        <pose>-0.185 0.215 -0.182 0 0 0</pose>
+        <geometry><box><size>0.05 0.06 0.284</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>meshes/table_lightmap.dae</uri>
+            <scale>0.05 0.1 0.125</scale>
+          </mesh>
+        </geometry>
+        <material>
+          <pbr>
+            <metal>
+              <albedo_map>textures/marble.png</albedo_map>
+            </metal>
+          </pbr>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>1 1 1 1</specular>
+          <emissive>0 0 0 1</emissive>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

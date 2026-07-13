@@ -32,11 +32,14 @@ def generate_launch_description():
         DeclareLaunchArgument('yaw', default_value='0.0'),
         SetEnvironmentVariable(
             'GZ_SIM_RESOURCE_PATH',
-            os.pathsep.join([os.path.join(pkg_gz, 'models'), pkg_ow])),
+            os.pathsep.join([
+                os.path.join(get_package_share_directory('oomwoo_sim_support'),
+                             'models'),
+                os.path.join(pkg_gz, 'models'), pkg_ow])),
         SetEnvironmentVariable('LIBGL_ALWAYS_SOFTWARE', '1'),
         SetEnvironmentVariable('GALLIUM_DRIVER', 'llvmpipe'),
         ExecuteProcess(
-            cmd=['gz', 'sim', '-s', '-r', '--headless-rendering', '-v', '1', world],
+            cmd=['gz', 'sim', '-s', '-r', '--headless-rendering', '-v', '4', world],
             output='screen'),
         Node(package='robot_state_publisher', executable='robot_state_publisher',
              output='screen',

@@ -23,10 +23,11 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     ExecuteProcess,
+    OpaqueFunction,
     SetEnvironmentVariable,
     TimerAction,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -35,7 +36,6 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description() -> LaunchDescription:
     pkg_sim = get_package_share_directory('oomwoo_sim_support')
     pkg_gazebo = get_package_share_directory('kaiaai_gazebo')
-    pkg_oomwoo = get_package_share_directory('oomwoo_one')
 
     # coarser 200 Hz physics step (vs the stock 1 kHz) so the bridged /clock
     # is 5x lighter — critical for a stable sim clock under x86 emulation.
@@ -45,9 +45,7 @@ def generate_launch_description() -> LaunchDescription:
     default_map = os.path.join(pkg_sim, 'maps', 'test_room.yaml')
     world = LaunchConfiguration('world')
     map_yaml = LaunchConfiguration('map')
-    xacro_file = os.path.join(pkg_oomwoo, 'urdf', 'robot.urdf.xacro')
     nav2_params = os.path.join(pkg_sim, 'config', 'nav2_params.yaml')
-    bridge_sim = os.path.join(pkg_oomwoo, 'config', 'gz_bridge.yaml')
 
     x0 = LaunchConfiguration('x_pose')
     y0 = LaunchConfiguration('y_pose')
@@ -62,39 +60,79 @@ def generate_launch_description() -> LaunchDescription:
         # coverage needs the Nav2 nav servers; relocalization does not (it only
         # spins in place under AMCL), so it can bring up a much lighter stack.
         DeclareLaunchArgument('with_nav', default_value='true'),
+        # gui:=true runs the IDENTICAL simulation with the Gazebo GUI attached
+        # (needs a display); default stays fully headless for CI/regressions.
+        DeclareLaunchArgument('gui', default_value='false'),
+        # Robot description package, kaiaai-style: 'config' (default) follows
+        # `kaia config robot.model <pkg>` (~/.kaiaai.yaml) exactly like the
+        # kaiaai_bringup tutorials; any other value names the package directly.
+        # The regression launches pin robot_model:=oomwoo_one so CI gates stay
+        # reproducible regardless of the machine's kaia config.
+        DeclareLaunchArgument('robot_model', default_value='config'),
     ]
     with_nav = IfCondition(LaunchConfiguration('with_nav'))
+    gui = IfCondition(LaunchConfiguration('gui'))
+    headless = UnlessCondition(LaunchConfiguration('gui'))
 
-    # models + meshes resolvable by gz; offscreen software GL for emulation/CI
+    # Software GL is only forced in headless mode; with the GUI we use the
+    # host's real GL stack.
     set_env = [
-        SetEnvironmentVariable(
-            'GZ_SIM_RESOURCE_PATH',
-            os.pathsep.join([os.path.join(pkg_gazebo, 'models'), pkg_oomwoo])),
-        SetEnvironmentVariable('LIBGL_ALWAYS_SOFTWARE', '1'),
-        SetEnvironmentVariable('GALLIUM_DRIVER', 'llvmpipe'),
+        SetEnvironmentVariable('LIBGL_ALWAYS_SOFTWARE', '1', condition=headless),
+        SetEnvironmentVariable('GALLIUM_DRIVER', 'llvmpipe', condition=headless),
     ]
 
+    def robot_setup(context):
+        """Actions that depend on the selected robot description package."""
+        model = context.perform_substitution(
+            LaunchConfiguration('robot_model'))
+        if model in ('', 'config'):
+            # kaiaai convention: read robot.model from ~/.kaiaai.yaml
+            try:
+                from kaiaai import config
+                model = config.get_var('robot.model')
+            except Exception:
+                model = 'oomwoo_one'
+        pkg_robot = get_package_share_directory(model)
+        xacro_file = os.path.join(pkg_robot, 'urdf', 'robot.urdf.xacro')
+        bridge_sim = os.path.join(pkg_robot, 'config', 'gz_bridge.yaml')
+
+        robot_description = ParameterValue(
+            Command(['xacro ', xacro_file]), value_type=str)
+        rsp = Node(
+            package='robot_state_publisher',
+            executable='robot_state_publisher', output='screen',
+            parameters=[{'robot_description': robot_description,
+                         'use_sim_time': True}])
+        bridge = Node(
+            package='ros_gz_bridge', executable='parameter_bridge',
+            output='screen',
+            parameters=[{'config_file': bridge_sim, 'use_sim_time': True}])
+        spawn = Node(
+            package='ros_gz_sim', executable='create', output='screen',
+            arguments=['-world', 'default', '-topic', 'robot_description',
+                       '-name', model, '-x', x0, '-y', y0, '-z', '0.06',
+                       '-Y', yaw0])
+        return [
+            # models + meshes resolvable by gz. Our models dir comes FIRST so
+            # overrides (TableMarble with authored leg collisions) win over
+            # the stock models.
+            SetEnvironmentVariable(
+                'GZ_SIM_RESOURCE_PATH',
+                os.pathsep.join([os.path.join(pkg_sim, 'models'),
+                                 os.path.join(pkg_gazebo, 'models'),
+                                 pkg_robot])),
+            rsp, bridge,
+            TimerAction(period=10.0, actions=[spawn]),
+        ]
+
+    # same world, same physics, same everything — only the rendering surface
+    # differs between these two, so headless and GUI runs are comparable.
     gz_server = ExecuteProcess(
         cmd=['gz', 'sim', '-s', '-r', '--headless-rendering', '-v', '1', world],
-        output='screen')
-
-    robot_description = ParameterValue(
-        Command(['xacro ', xacro_file]), value_type=str)
-    rsp = Node(
-        package='robot_state_publisher', executable='robot_state_publisher',
-        output='screen',
-        parameters=[{'robot_description': robot_description,
-                     'use_sim_time': True}])
-
-    bridge = Node(
-        package='ros_gz_bridge', executable='parameter_bridge', output='screen',
-        parameters=[{'config_file': bridge_sim, 'use_sim_time': True}])
-
-    spawn = Node(
-        package='ros_gz_sim', executable='create', output='screen',
-        arguments=['-world', 'default', '-topic', 'robot_description',
-                   '-name', 'oomwoo_one', '-x', x0, '-y', y0, '-z', '0.06',
-                   '-Y', yaw0])
+        output='screen', condition=headless)
+    gz_gui = ExecuteProcess(
+        cmd=['gz', 'sim', '-r', '-v', '1', world],
+        output='screen', condition=gui)
 
     # Explicit localization (map_server + AMCL + lifecycle) with an absolute
     # map path — avoids nav2_bringup's map-arg substitution quirk and keeps the
@@ -193,7 +231,7 @@ def generate_launch_description() -> LaunchDescription:
     # pose over /initialpose instead.
 
     return LaunchDescription(args + set_env + [
-        gz_server, rsp, bridge, ground_truth,
-        TimerAction(period=10.0, actions=[spawn]),
+        OpaqueFunction(function=robot_setup),
+        gz_server, gz_gui, ground_truth,
         TimerAction(period=14.0, actions=localization + navigation),
     ])

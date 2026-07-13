@@ -50,24 +50,36 @@ docker build -t jayadevrana/oomwoo-m1:jazzy --build-arg USE_LOCAL=1 -f deploy/Do
 Or just build the packages inside the stock image:
 
 ```bash
-docker run -d --name oom -v $PWD:/root/oomwoo-dev makerspet/oomwoo:jazzy-dev sleep infinity
-docker exec oom bash -lc '. /opt/ros/jazzy/setup.bash && . /ros_ws/install/setup.bash \
-  && cd /root/oomwoo-dev && colcon build --symlink-install \
-     --packages-select oomwoo_coverage oomwoo_nav_localize oomwoo_sim_support'
+docker run -it --name oom makerspet/oomwoo:jazzy-dev
+# at the container's bash prompt — packages go in /ros_ws/src, the stock
+# workspace, per oomwoo-install convention:
+git clone https://github.com/jayadevrana/oomwoo-m1-ros2 /ros_ws/src/oomwoo-m1
+cd /ros_ws && colcon build --symlink-install \
+  --packages-select oomwoo_coverage oomwoo_nav_localize oomwoo_sim_support
+source /ros_ws/install/setup.bash
 ```
 
 Then run the tests (each is one command, prints the numbers, exits 0 on pass):
 
 ```bash
 # coverage — full sweep + gap-fill, ~20 min of sim
-./deploy/run_coverage_regression.sh
+bash /ros_ws/src/oomwoo-m1/deploy/run_coverage_regression.sh
 
 # relocalization — 10 random kidnaps
-./deploy/run_reloc_regression.sh
+bash /ros_ws/src/oomwoo-m1/deploy/run_reloc_regression.sh
+
+# coverage on the stock living_room
+bash /ros_ws/src/oomwoo-m1/deploy/run_coverage_livingroom.sh
 ```
 
-No display needed. Gazebo runs with `--headless-rendering`, so this drops
-straight into CI.
+No display needed — Gazebo runs with `--headless-rendering`, so this drops
+straight into CI. To watch the identical sim with the Gazebo GUI, add
+`gui:=true` to any launch. To run against another vacuum model, use the
+kaiaai convention (`kaia config robot.model <pkg>`) or pass
+`robot_model:=<pkg>`; the regressions pin `oomwoo_one` for reproducibility.
+`RUNS=3` before any script repeats it and prints the variance. If the meter
+detects ground-truth teleports (unstable sim — e.g. Docker-on-Windows/WSL2),
+the run exits 2 with "sim unstable" instead of reporting garbage numbers.
 
 ## How it's measured (so you can trust the numbers)
 
@@ -119,31 +131,37 @@ map straight from that geometry, so the map is complete and the run is repeatabl
 ## It also runs on the stock living_room
 
 ```bash
-./deploy/run_coverage_livingroom.sh
+bash /ros_ws/src/oomwoo-m1/deploy/run_coverage_livingroom.sh
 ```
 
-I profiled the stock `makerspet` `living_room` on native x86-64 and it holds up
-better than expected — with two corrections and one fix:
+The stock `living_room` needed two fixes, both shipped here:
 
-- **The furniture is visible to the headless LiDAR.** All 360 beams return and the
-  robot sees the sofa (`.obj`) and marble table (`.dae`) at 0.2–0.6 m. The
-  "invisible COLLADA meshes" I saw earlier was an ARM-emulation artifact, not the
-  world.
-- **`.obj` furniture already collides** — the robot stops at the sofa, no
-  pass-through.
-- **The `.dae` marble table did not collide** (Gazebo's dartsim builds no
-  collision for that mesh) — the robot drove straight through it. Fix:
-  `tools/gen_livingroom_proxies.py` adds a collision-only box proxy per mesh
-  furniture item, sized to the mesh bounding box. Visuals stay stock (LiDAR still
-  sees the real meshes); the boxes just stop the robot. Table pass-through goes
-  from 0.81 m to a 0.21 m stop.
+- **The marble table had no physics headless.** Gazebo's dartsim engine can't
+  build a collision from that model's `.dae` mesh (the other `.obj` furniture
+  collides fine), so the robot drove straight through it. Converting the mesh
+  didn't help — V-HACD convex decomposition fills the open space under the top,
+  which would stop the vacuum from cleaning there. So the override in
+  `models/TableMarble/` keeps the stock visual and carries **exact primitive
+  collisions measured from the mesh's own geometry**: four floor-reaching legs
+  plus the tabletop slab. Verified by driving the robot at it: it passes under
+  the top, cleans between the legs, and stops dead at a leg (pinned at the
+  predicted coordinate to within 1 cm).
+- **The stock SLAM map is in a frame offset from the gz world**, so
+  `tools/gen_livingroom_map.py` generates a world-aligned map by slicing every
+  collision shape at the robot's own height band (2–20 cm). Open-under
+  furniture contributes only its legs, so the floor beneath the table counts
+  as cleanable — which is the whole point of a vacuum.
 
-The stock SLAM map is in a frame offset from the gz world, so
-`tools/gen_livingroom_map.py` regenerates a world-aligned map from the world
-geometry. Coverage in this cluttered room (widest gap ~1.5 m) lands at **90.0 %**,
-but efficiency drops to **~39 %** — the clutter forces a lot of maneuvering, so the
-robot drives ~2.5× the ideal sweep length. That's the honest number for a room
-this tight; `test_room` is the world that meets the 80 % efficiency bar.
+No box proxies anywhere: the robot cleans under furniture wherever it
+physically fits. Measured on the stock room: **89.7 % coverage** of the full
+robot-height-serviceable floor (under-furniture floor *included* in the
+denominator), efficiency 31.9 %, sim stable, zero stuck events. For scale: the
+earlier proxy version's "90 %" was scored against a denominator that excluded
+all under-furniture floor — this run cleans **8.5 % more actual floor area**.
+The remaining ~10 % is a handful of pockets Nav2's local costmap genuinely
+can't enter. Efficiency lands far below the open test_room's by design: a
+~1.5 m-widest-gap room forces constant maneuvering, and that's the honest
+number for it.
 
 ## One gotcha: run on x86-64, not ARM
 
