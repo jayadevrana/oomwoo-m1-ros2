@@ -42,51 +42,30 @@ README.md                  how to build, run, and how the numbers are measured
   ARM-emulation artifact; the stock living_room renders fine on native x86-64
   and now has its own regression script, next section.)
 
-## Stock living_room (headless) — no proxies, cleans under furniture
+## Stock living_room (headless) — stock world, untouched
 
-The box proxies from the first pass are gone — you were right that they blocked
-exactly the floor a vacuum exists to clean. What replaced them, all verified
-from the simulator's true pose:
+You were right on both counts, and the repo now reflects it:
 
-- **Furniture is visible to the LiDAR headless.** All 360 beams return; the
-  robot sees the sofa and the marble table at 0.2–0.6 m. The "invisible meshes"
-  I reported earlier was an ARM-emulation artifact, and my "the .obj furniture
-  already collides" claim was wrong too — a flaky test harness fooled me.
-  The truth: Gazebo's dartsim engine skips *every* raw mesh collision headless
-  ("Mesh construction ... not implemented"), .obj and .dae alike. Navigation
-  still avoids furniture fine because the costmaps are LiDAR-driven.
-- **The marble table now has real physics.** Converting the mesh doesn't work
-  (dartsim skips it) and V-HACD convex decomposition bridges the open space
-  under the top — measured: the robot wedged mid-table on a phantom hull. So
-  the override model keeps the stock visual and carries primitive collisions
-  measured from the mesh's own geometry: four floor-standing legs plus the
-  tabletop slab. Drive-tested: the robot passes under the top, threads between
-  the legs, and pins at a leg face within 1 cm of the predicted coordinate.
-  Matches what you saw with the GUI on.
-- **The map counts under-furniture floor as cleanable.** The stock SLAM map is
-  in a frame offset from the gz world, so `tools/gen_livingroom_map.py`
-  generates a world-aligned map by slicing every collision shape at the robot's
-  height band (2–20 cm): open-under furniture contributes only its legs. The
-  cleanable denominator grew ~9% the moment the proxies came out.
-- **Wedge escape.** Entering tight pockets cuts both ways: Nav2's recoveries
-  refuse to move inside inflated-lethal space, so a robot that squeezes in can
-  strand there. The planner now detects back-to-back unreachable waypoints and
-  reverses straight out open-loop, then resumes the sweep.
+- **The stock world and models are used exactly as you ship them.** dartsim
+  builds the mesh collisions correctly headless — identical to the UI run,
+  since the Gazebo server does the physics either way. My earlier claims
+  ("no raw-mesh collision headless", and the box proxies / primitive-leg
+  override built on them) came from a faulty test harness: its verdict was a
+  distance threshold calibrated on the solid sofa, so a robot correctly
+  driving *under* the open table got labeled "ghosting". Your Claude's
+  diagnosis of that bug is exactly right. All overrides are removed.
+- **The map** is the one generated artifact: the stock SLAM map is in a frame
+  offset from the gz world, so `tools/gen_livingroom_map.py` builds a
+  world-aligned map by slicing the stock collision meshes at the robot's
+  height band (2–20 cm) — under-table floor counts as cleanable.
+- **Wedge escape** (kept — it's behaviour, not a world change): if Nav2 gives
+  up on several waypoints in a row inside inflated-lethal pockets, the planner
+  reverses straight out open-loop and resumes the sweep.
 
-Run it: `deploy/run_coverage_livingroom.sh`. Measured on the stock room:
-
-```
-Coverage:    89.7%  of the full robot-height floor, under-furniture INCLUDED
-Efficiency:  31.9%  (tight room — constant maneuvering; honest number)
-Stability:   pose_jumps=0, no stuck events, ended on plateau
-```
-
-One caveat so the numbers read right: my earlier "90.0%" was scored against a
-denominator that *excluded* everything under furniture (the proxies made it
-unreachable). This run's denominator includes that floor — and the robot
-actually cleans ~8.5% more real floor area than before, under the table
-included. The last ~10% is a few pockets Nav2's local costmap genuinely can't
-enter; that's the true limit of this robot in this room, not a measurement gap.
+Run it: `deploy/run_coverage_livingroom.sh`. The previously reported numbers
+(89.7% / 31.9%) were measured with the now-removed override in place, so treat
+them as superseded — I'm re-running against the pure stock world and will send
+the corrected figure.
 
 ## Feedback round (post-M1 review)
 
@@ -101,8 +80,8 @@ Everything from your review, in:
 - **`kaia config robot.model`** — launches resolve the robot description the
   kaiaai way (launch arg → `~/.kaiaai.yaml` → default). The regression scripts
   pin `oomwoo_one` so the gate is reproducible on any machine.
-- **Marble table + proxies** — proxies removed, table collision authored from
-  its own mesh geometry (details above). No charge for the proxy removal.
+- **Marble table + proxies** — all collision workarounds removed; the stock
+  world is used untouched (details above). No charge for any of that rework.
 - **Measurement hardening** (from your Claude's findings) — the meter rejects
   implausible ground-truth jumps from the path length, counts them, and latches
   `sim_unstable`; the runner then aborts with a distinct exit code and a clear

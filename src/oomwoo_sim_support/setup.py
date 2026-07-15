@@ -18,18 +18,6 @@ setup(
         (os.path.join('share', package_name, 'config'), glob('config/*.xml')),
         (os.path.join('share', package_name, 'maps'), glob('maps/*')),
         (os.path.join('share', package_name, 'worlds'), glob('worlds/*.world')),
-        # gz model overrides (loaded ahead of the stock models via
-        # GZ_SIM_RESOURCE_PATH precedence in sim_bringup). TableMarble carries a
-        # convex-decomposition collision so its mesh has real physics headless.
-        (os.path.join('share', package_name, 'models', 'TableMarble'),
-            ['models/TableMarble/model.sdf', 'models/TableMarble/model.config']),
-        (os.path.join('share', package_name, 'models', 'TableMarble', 'meshes'),
-            glob('models/TableMarble/meshes/*')),
-        (os.path.join('share', package_name, 'models', 'TableMarble', 'textures'),
-            glob('models/TableMarble/textures/*')),
-        (os.path.join('share', package_name, 'models', 'TableMarble',
-                      'materials', 'textures'),
-            glob('models/TableMarble/materials/textures/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

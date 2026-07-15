@@ -113,13 +113,13 @@ def generate_launch_description() -> LaunchDescription:
                        '-name', model, '-x', x0, '-y', y0, '-z', '0.06',
                        '-Y', yaw0])
         return [
-            # models + meshes resolvable by gz. Our models dir comes FIRST so
-            # overrides (TableMarble with authored leg collisions) win over
-            # the stock models.
+            # models + meshes resolvable by gz (stock kaiaai models + the robot
+            # description). The stock living_room furniture — including the
+            # TableMarble .dae — collides correctly as a trimesh headless, so no
+            # model overrides are needed.
             SetEnvironmentVariable(
                 'GZ_SIM_RESOURCE_PATH',
-                os.pathsep.join([os.path.join(pkg_sim, 'models'),
-                                 os.path.join(pkg_gazebo, 'models'),
+                os.pathsep.join([os.path.join(pkg_gazebo, 'models'),
                                  pkg_robot])),
             rsp, bridge,
             TimerAction(period=10.0, actions=[spawn]),

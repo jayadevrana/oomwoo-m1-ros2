@@ -70,17 +70,14 @@ def main() -> int:
     args = parse_args()
     link = Path(args.link)
     master_fd, slave_fd = pty.openpty()
-    slave_name = os.ttyname(slave_fd)
-    # Raw mode: a real serial line does not echo or do line editing. Without this
-    # the pty echoes every frame we write back onto the master, which we then
-    # re-read as a phantom "command" and ack -> a self-feedback loop.
-    tty.setraw(master_fd)
+    # Raw mode: a fresh PTY starts in canonical mode with ECHO on, so the slave
+    # line discipline echoes every frame we write back to the master. We then
+    # read our own heartbeats and ack them as phantom commands.
     tty.setraw(slave_fd)
-    # Keep the slave fd OPEN. If it is closed here, the pty has no slave-side
-    # holder until a consumer opens the symlink, so the master immediately sees
-    # POLLHUP -> select() marks it readable -> os.read()/os.write() raise EIO and
-    # the tool crashes on startup, before any ROS bridge connects. Holding the
-    # slave open keeps the line alive whether or not a consumer is attached.
+    slave_name = os.ttyname(slave_fd)
+    # Keep the slave open for the lifetime of the process. Closing it leaves the
+    # PTY with no slave-side holder, and reads on the master then fail with EIO
+    # as soon as a client disconnects (or immediately, if none ever attaches).
     install_link(slave_name, link)
 
     running = True

@@ -55,9 +55,10 @@ summary; exits 0 on pass.
 bash /ros_ws/src/oomwoo-m1/deploy/run_coverage_livingroom.sh
 ```
 
-Same harness on the cluttered stock living_room (marble-table collision fixed,
-no proxies — the robot cleans under the table between its legs). The room is
-tight, so efficiency lands below the open test_room's by design.
+Same harness on the cluttered stock living_room, used exactly as upstream ships
+it — the robot drives under the marble table and cleans between its legs (stock
+mesh collisions work headless as-is). The room is tight, so efficiency lands
+below the open test_room's by design.
 
 ## Watching it with the Gazebo GUI
 

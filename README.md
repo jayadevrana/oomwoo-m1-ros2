@@ -134,34 +134,25 @@ map straight from that geometry, so the map is complete and the run is repeatabl
 bash /ros_ws/src/oomwoo-m1/deploy/run_coverage_livingroom.sh
 ```
 
-The stock `living_room` needed two fixes, both shipped here:
+The stock `living_room` world and models are used **exactly as upstream ships
+them** — furniture visuals, mesh collisions, everything. dartsim builds the
+`.dae`/`.obj` mesh collisions correctly headless (identically to running with
+the GUI: the Gazebo server does the physics either way), so the robot drives
+under the marble table, threads between its legs, and stops at real geometry.
+Earlier revisions of this repo shipped collision workarounds (box proxies,
+then primitive leg overrides) built on a faulty test harness — both were wrong
+and both are gone.
 
-- **The marble table had no physics headless.** Gazebo's dartsim engine can't
-  build a collision from that model's `.dae` mesh (the other `.obj` furniture
-  collides fine), so the robot drove straight through it. Converting the mesh
-  didn't help — V-HACD convex decomposition fills the open space under the top,
-  which would stop the vacuum from cleaning there. So the override in
-  `models/TableMarble/` keeps the stock visual and carries **exact primitive
-  collisions measured from the mesh's own geometry**: four floor-reaching legs
-  plus the tabletop slab. Verified by driving the robot at it: it passes under
-  the top, cleans between the legs, and stops dead at a leg (pinned at the
-  predicted coordinate to within 1 cm).
-- **The stock SLAM map is in a frame offset from the gz world**, so
-  `tools/gen_livingroom_map.py` generates a world-aligned map by slicing every
-  collision shape at the robot's own height band (2–20 cm). Open-under
-  furniture contributes only its legs, so the floor beneath the table counts
-  as cleanable — which is the whole point of a vacuum.
+The one thing generated here is the **map**: the stock SLAM map is in a frame
+offset from the gz world, so `tools/gen_livingroom_map.py` produces a
+world-aligned map by slicing the stock collision meshes at the robot's height
+band (2–20 cm). Open-under furniture contributes only its legs, so the floor
+beneath the table counts as cleanable — which is the whole point of a vacuum.
 
-No box proxies anywhere: the robot cleans under furniture wherever it
-physically fits. Measured on the stock room: **89.7 % coverage** of the full
-robot-height-serviceable floor (under-furniture floor *included* in the
-denominator), efficiency 31.9 %, sim stable, zero stuck events. For scale: the
-earlier proxy version's "90 %" was scored against a denominator that excluded
-all under-furniture floor — this run cleans **8.5 % more actual floor area**.
-The remaining ~10 % is a handful of pockets Nav2's local costmap genuinely
-can't enter. Efficiency lands far below the open test_room's by design: a
-~1.5 m-widest-gap room forces constant maneuvering, and that's the honest
-number for it.
+Coverage numbers for the stock room are being re-measured against the pure
+stock world (previous published figures were taken with the now-removed
+override in place and are superseded); the script prints the current result
+and writes `coverage_report.json`.
 
 ## One gotcha: run on x86-64, not ARM
 
