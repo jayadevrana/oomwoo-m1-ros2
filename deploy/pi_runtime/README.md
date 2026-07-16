@@ -1,9 +1,14 @@
-# OOMWOO Pi 4/5 4GB runtime — M1 integration + measured baseline
+# OOMWOO Pi 4 runtime — M1 integration + measured baseline
 
 Milestone 2. Validates [xbattlax's Raspberry Pi runtime scaffold][pr1]
-(`oomwoo-install` PR #1) on a real Pi 4 4GB, integrates the M1 behaviours, and
+(`oomwoo-install` PR #1) on a **real Pi 4**, integrates the M1 behaviours, and
 reports the RSS/PSS/CPU baseline the scaffold's `pi4_4gb_runtime_plan.md` calls
 for. Native Ubuntu 24.04 / ROS 2 Jazzy — no Docker, no Gazebo on the robot.
+
+Measured end-to-end on the client's board: a Raspberry Pi 4 Model B Rev 1.4,
+Ubuntu 24.04.4 LTS, ROS 2 Jazzy, RAM capped at 2 GB (`total_mem=2048` in
+`/boot/firmware/config.txt` — `free` reports 1.8 GiB). 2 GB is the *harder* of
+the plan's two targets, so the numbers below clear the 4 GB case as well.
 
 ## What's here
 
@@ -56,50 +61,76 @@ BAG=$PWD/scan_bag_clean bash measure_pi_baseline.sh
 Each phase = launch the graph (bag leading, so odom TF is flowing before Nav2
 activates) → sample RSS/PSS/CPU for a window → tear down.
 
-## Baseline
+## Baseline — measured on the real Pi 4 (2 GB)
 
 RSS = resident set; **PSS** = proportional set size (the honest figure when
-nodes share libraries — use this against the 4 GB / 2 GB targets). CPU% is
-summed across processes over the window.
+nodes share libraries — use this against the 2 GB / 4 GB targets). CPU% is
+summed across processes over the window (Pi 4 has 4 cores, so 400% = fully
+saturated). `min free` is the low-water mark of `MemAvailable` across the phase
+— what the OS actually had spare at the worst moment.
 
-Measured on **native ARM64 Ubuntu 24.04 / ROS 2 Jazzy** (GCP `t2a-standard-2`,
-Ampere Altra — same OS, arch and apt ROS packages a Pi 4 runs). nav lifecycle
-reaches "active"; SLAM maps from the 5 Hz bag. RAM/PSS is representative of the
-Pi 4 4GB; **CPU% is optimistic** — the Ampere Altra core is faster than a Pi's
-Cortex-A72, so treat CPU as a lower bound and confirm it on the board.
+Measured on the **Raspberry Pi 4 Model B Rev 1.4, 2 GB cap, Ubuntu 24.04.4,
+ROS 2 Jazzy**. nav lifecycle reaches "active"; SLAM maps from the 5 Hz bag.
 
-| Phase | Procs | RSS (MB) | **PSS (MB)** | CPU % |
-|---|---|---|---|---|
-| idle (rsp + MCU serial) | 5 | 89 | **64** | 0.0 |
-| slam (+ slam_toolbox @5 Hz) | 9 | 276 | **166** | 5.0 |
-| nav (+ AMCL + Nav2 + both M1 behaviours) | 20 | 913 | **491** | 59 |
+| Phase | Procs | RSS (MB) | **PSS (MB)** | CPU % | min free (MB) |
+|---|---|---|---|---|---|
+| idle (rsp + MCU serial) | 4 | 84.5 | **64.2** | 0.2 | 1418 |
+| slam (+ slam_toolbox @5 Hz) | 8 | 270.3 | **165.6** | 17.6 | 1340 |
+| nav (+ AMCL + Nav2 + both M1 behaviours) | 19 | 898.8 | **486.3** | 242.4 | 1048 |
 
-Top RAM consumers in the full (nav) graph, PSS:
+Top consumers in the full (nav) graph, peak-sample PSS:
 
 | Node | PSS (MB) | | Node | PSS (MB) |
 |---|---|---|---|---|
-| coverage_planner (M1) | 56 | | controller_server | 27 |
-| kidnap_recovery (M1) | 51 | | behavior_server | 24 |
-| bt_navigator | 46 | | amcl | 21 |
-| planner_server | 30 | | map_server | 21 |
+| coverage_planner (M1) | 56.3 | | controller_server | 27.2 |
+| kidnap_recovery (M1) | 50.8 | | planner_server | 27.0 |
+| bt_navigator | 45.8 | | behavior_server | 23.7 |
+| launch/python nodes (×4) | ~26 ea | | amcl | ~15 |
 
-**Verdict on the 4 GB → 2 GB target.** The full stack — localization + the
-trimmed Nav2 + both M1 behaviours loaded at once — is **~491 MB PSS / ~910 MB
-RSS**, leaving ~7 GB free on this 8 GB host and well under 2 GB. The 2 GB target
-is reachable **without a C++/Rust rewrite**. Two observations for the reduction
-work:
+**Verdict on the 2 GB target.** The full stack — localization + the trimmed
+Nav2 + both M1 behaviours loaded at once — peaks at **486 MB PSS / 899 MB RSS**,
+and the OS still had **1048 MB free at the worst moment** on a 2 GB board. The
+2 GB target is met **without a C++/Rust rewrite**, with room to spare. Two
+observations for any future reduction work:
 
-- The biggest single consumers are the **two M1 Python behaviours** (~50 MB PSS
-  each, numpy-backed) — more than any individual C++ Nav2 server. If RAM ever
-  gets tight, porting those is a bigger lever than touching Nav2.
-- Next, per the plan: **ROS 2 composition** to collapse the ~20 separate nav
-  processes into a few component containers removes per-process overhead.
+- The biggest single consumers are the **two M1 Python behaviours**
+  (coverage_planner 56 MB, kidnap_recovery 51 MB PSS, numpy-backed) — each more
+  than any individual C++ Nav2 server. If RAM ever gets tight, porting those is
+  a bigger lever than touching Nav2.
+- Next, per the plan: **ROS 2 composition** to collapse the ~19 separate nav
+  processes (four are just `ros2 launch`/python overhead at ~26 MB each) into a
+  few component containers removes per-process cost.
 
-Re-run on the board with `measure_pi_baseline.sh`; the script and this table's
-JSON (`baseline_report.json`) are identical there.
+### Pre-hardware estimate — and how well it held
 
-Read PSS against the budget: `idle` is the floor, `slam` adds onboard mapping,
-`nav` is everything loaded at once (localization + the trimmed Nav2 stack + both
-M1 behaviours) — the worst case for the 2 GB reduction target.
+Before the board was available, the same three phases were run on **native
+ARM64 Ubuntu 24.04 / ROS 2 Jazzy** (GCP `t2a-standard-2`, Ampere Altra — same OS,
+arch and apt ROS packages) to predict the baseline. The prediction and the
+on-board reality:
+
+| Phase | PSS est → real | RSS est → real | CPU est → real |
+|---|---|---|---|
+| idle | 64 → **64.2** | 89 → **84.5** | 0.0 → **0.2** |
+| slam | 166 → **165.6** | 276 → **270.3** | 5.0 → **17.6** |
+| nav | 491 → **486.3** | 913 → **898.8** | 59 → **242.4** |
+
+RAM landed within ~1% — PSS is portable across the two ARM64 hosts, as expected.
+**CPU was optimistic by ~4×**, exactly as flagged: the Ampere Altra core is far
+faster than the Pi's Cortex-A72, so the cloud figure was always a lower bound.
+Even so, nav's real 242% is ~2.4 of the Pi's 4 cores at peak — headroom on CPU
+too.
+
+Reproduce on the board: `BAG=$PWD/scan_bag bash measure_pi_baseline.sh` — it
+writes the same `baseline_report.json` these tables come from.
+
+### Pi setup note (reproducing from a fresh Ubuntu Server image)
+
+The ROS build-deps pull in `-dev` packages that pin exact runtime-lib versions.
+A fresh image with only the `noble` + `noble-security` apt pockets hits an
+"impossible situation" (e.g. `libbz2-dev` wants `libbz2-1.0 (= 1.0.8-5.1)` while
+`-security` has `...build0.1`). Enable **`noble-updates`** in
+`/etc/apt/sources.list.d/ubuntu.sources` (`Suites: noble noble-updates
+noble-backports`) and `apt full-upgrade` before installing ROS — then the whole
+install resolves cleanly.
 
 [pr1]: https://github.com/makerspet/oomwoo-install/pull/1

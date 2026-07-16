@@ -1,0 +1,1134 @@
+{
+  "label": "nav",
+  "n_proc": 19,
+  "peak_total_rss_mb": 898.8,
+  "peak_total_pss_mb": 486.3,
+  "total_cpu_pct": 242.4,
+  "window_s": 27.8,
+  "cpu_by_proc": {
+    "coverage_planner": 66.7,
+    "kidnap_recovery": 53.6,
+    "bt_navigator": 32.9,
+    "controller_server": 18.1,
+    "python3": 15.6,
+    "planner_server": 15.4,
+    "behavior_server": 13.1,
+    "amcl": 9.9,
+    "map_server": 4.4,
+    "lifecycle_manager": 4.0,
+    "robot_state_publisher": 3.8,
+    "slam_toolbox": 3.8,
+    "oomwoo_runtime.launch.py": 1.1,
+    "bash": 0.0,
+    "oomwoo_sim_mcu_serial.py": 0.0
+  },
+  "samples": [
+    {
+      "t": 3.1,
+      "n_proc": 19,
+      "total_rss_mb": 894.2,
+      "total_pss_mb": 482.3,
+      "mem_available_mb": 1054.8,
+      "procs": [
+        {
+          "pid": 93790,
+          "name": "coverage_planner",
+          "rss_mb": 85.9,
+          "pss_mb": 56.4
+        },
+        {
+          "pid": 93695,
+          "name": "python3",
+          "rss_mb": 83.4,
+          "pss_mb": 51.6
+        },
+        {
+          "pid": 93791,
+          "name": "kidnap_recovery",
+          "rss_mb": 76.6,
+          "pss_mb": 47.7
+        },
+        {
+          "pid": 93786,
+          "name": "bt_navigator",
+          "rss_mb": 72.8,
+          "pss_mb": 45.7
+        },
+        {
+          "pid": 93783,
+          "name": "controller_server",
+          "rss_mb": 55.9,
+          "pss_mb": 27.1
+        },
+        {
+          "pid": 93784,
+          "name": "planner_server",
+          "rss_mb": 55.4,
+          "pss_mb": 26.7
+        },
+        {
+          "pid": 93785,
+          "name": "behavior_server",
+          "rss_mb": 50.2,
+          "pss_mb": 23.5
+        },
+        {
+          "pid": 93782,
+          "name": "amcl",
+          "rss_mb": 47.2,
+          "pss_mb": 20.5
+        },
+        {
+          "pid": 93781,
+          "name": "map_server",
+          "rss_mb": 45.4,
+          "pss_mb": 20.6
+        },
+        {
+          "pid": 93662,
+          "name": "slam_toolbox",
+          "rss_mb": 40.0,
+          "pss_mb": 18.5
+        },
+        {
+          "pid": 93787,
+          "name": "lifecycle_manager",
+          "rss_mb": 40.0,
+          "pss_mb": 16.2
+        },
+        {
+          "pid": 93775,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 39.0,
+          "pss_mb": 26.0
+        },
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93656,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93661,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.6,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93780,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.5,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.2,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 6.7
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 6.2,
+      "n_proc": 19,
+      "total_rss_mb": 894.5,
+      "total_pss_mb": 482.7,
+      "mem_available_mb": 1054.5,
+      "procs": [
+        {
+          "pid": 93790,
+          "name": "coverage_planner",
+          "rss_mb": 85.9,
+          "pss_mb": 56.4
+        },
+        {
+          "pid": 93695,
+          "name": "python3",
+          "rss_mb": 83.4,
+          "pss_mb": 51.6
+        },
+        {
+          "pid": 93791,
+          "name": "kidnap_recovery",
+          "rss_mb": 76.6,
+          "pss_mb": 47.7
+        },
+        {
+          "pid": 93786,
+          "name": "bt_navigator",
+          "rss_mb": 72.8,
+          "pss_mb": 45.8
+        },
+        {
+          "pid": 93783,
+          "name": "controller_server",
+          "rss_mb": 56.0,
+          "pss_mb": 27.3
+        },
+        {
+          "pid": 93784,
+          "name": "planner_server",
+          "rss_mb": 55.5,
+          "pss_mb": 26.8
+        },
+        {
+          "pid": 93785,
+          "name": "behavior_server",
+          "rss_mb": 50.2,
+          "pss_mb": 23.5
+        },
+        {
+          "pid": 93782,
+          "name": "amcl",
+          "rss_mb": 47.2,
+          "pss_mb": 20.5
+        },
+        {
+          "pid": 93781,
+          "name": "map_server",
+          "rss_mb": 45.4,
+          "pss_mb": 20.6
+        },
+        {
+          "pid": 93662,
+          "name": "slam_toolbox",
+          "rss_mb": 40.0,
+          "pss_mb": 18.5
+        },
+        {
+          "pid": 93787,
+          "name": "lifecycle_manager",
+          "rss_mb": 40.0,
+          "pss_mb": 16.2
+        },
+        {
+          "pid": 93775,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 39.0,
+          "pss_mb": 26.0
+        },
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93656,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93661,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.6,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93780,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.5,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.2,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 6.7
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 9.3,
+      "n_proc": 19,
+      "total_rss_mb": 894.7,
+      "total_pss_mb": 482.9,
+      "mem_available_mb": 1054.5,
+      "procs": [
+        {
+          "pid": 93790,
+          "name": "coverage_planner",
+          "rss_mb": 85.9,
+          "pss_mb": 56.4
+        },
+        {
+          "pid": 93695,
+          "name": "python3",
+          "rss_mb": 83.4,
+          "pss_mb": 51.6
+        },
+        {
+          "pid": 93791,
+          "name": "kidnap_recovery",
+          "rss_mb": 76.6,
+          "pss_mb": 47.7
+        },
+        {
+          "pid": 93786,
+          "name": "bt_navigator",
+          "rss_mb": 72.8,
+          "pss_mb": 45.8
+        },
+        {
+          "pid": 93783,
+          "name": "controller_server",
+          "rss_mb": 56.0,
+          "pss_mb": 27.3
+        },
+        {
+          "pid": 93784,
+          "name": "planner_server",
+          "rss_mb": 55.7,
+          "pss_mb": 27.0
+        },
+        {
+          "pid": 93785,
+          "name": "behavior_server",
+          "rss_mb": 50.2,
+          "pss_mb": 23.5
+        },
+        {
+          "pid": 93782,
+          "name": "amcl",
+          "rss_mb": 47.2,
+          "pss_mb": 20.5
+        },
+        {
+          "pid": 93781,
+          "name": "map_server",
+          "rss_mb": 45.4,
+          "pss_mb": 20.6
+        },
+        {
+          "pid": 93662,
+          "name": "slam_toolbox",
+          "rss_mb": 40.0,
+          "pss_mb": 18.5
+        },
+        {
+          "pid": 93787,
+          "name": "lifecycle_manager",
+          "rss_mb": 40.0,
+          "pss_mb": 16.2
+        },
+        {
+          "pid": 93775,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 39.0,
+          "pss_mb": 26.0
+        },
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93656,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93661,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.6,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93780,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.5,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.2,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 6.7
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 12.4,
+      "n_proc": 19,
+      "total_rss_mb": 896.6,
+      "total_pss_mb": 484.8,
+      "mem_available_mb": 1054.1,
+      "procs": [
+        {
+          "pid": 93790,
+          "name": "coverage_planner",
+          "rss_mb": 85.9,
+          "pss_mb": 56.4
+        },
+        {
+          "pid": 93695,
+          "name": "python3",
+          "rss_mb": 83.4,
+          "pss_mb": 51.6
+        },
+        {
+          "pid": 93791,
+          "name": "kidnap_recovery",
+          "rss_mb": 78.5,
+          "pss_mb": 49.6
+        },
+        {
+          "pid": 93786,
+          "name": "bt_navigator",
+          "rss_mb": 72.8,
+          "pss_mb": 45.8
+        },
+        {
+          "pid": 93783,
+          "name": "controller_server",
+          "rss_mb": 56.0,
+          "pss_mb": 27.3
+        },
+        {
+          "pid": 93784,
+          "name": "planner_server",
+          "rss_mb": 55.7,
+          "pss_mb": 27.0
+        },
+        {
+          "pid": 93785,
+          "name": "behavior_server",
+          "rss_mb": 50.2,
+          "pss_mb": 23.5
+        },
+        {
+          "pid": 93782,
+          "name": "amcl",
+          "rss_mb": 47.2,
+          "pss_mb": 20.5
+        },
+        {
+          "pid": 93781,
+          "name": "map_server",
+          "rss_mb": 45.4,
+          "pss_mb": 20.6
+        },
+        {
+          "pid": 93662,
+          "name": "slam_toolbox",
+          "rss_mb": 40.0,
+          "pss_mb": 18.5
+        },
+        {
+          "pid": 93787,
+          "name": "lifecycle_manager",
+          "rss_mb": 40.0,
+          "pss_mb": 16.2
+        },
+        {
+          "pid": 93775,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 39.0,
+          "pss_mb": 26.0
+        },
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93656,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93661,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.6,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93780,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.5,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.2,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 6.7
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 15.5,
+      "n_proc": 19,
+      "total_rss_mb": 897.7,
+      "total_pss_mb": 485.3,
+      "mem_available_mb": 1048.4,
+      "procs": [
+        {
+          "pid": 93790,
+          "name": "coverage_planner",
+          "rss_mb": 85.9,
+          "pss_mb": 56.3
+        },
+        {
+          "pid": 93695,
+          "name": "python3",
+          "rss_mb": 83.4,
+          "pss_mb": 51.6
+        },
+        {
+          "pid": 93791,
+          "name": "kidnap_recovery",
+          "rss_mb": 78.7,
+          "pss_mb": 49.8
+        },
+        {
+          "pid": 93786,
+          "name": "bt_navigator",
+          "rss_mb": 72.8,
+          "pss_mb": 45.8
+        },
+        {
+          "pid": 93783,
+          "name": "controller_server",
+          "rss_mb": 56.0,
+          "pss_mb": 27.2
+        },
+        {
+          "pid": 93784,
+          "name": "planner_server",
+          "rss_mb": 55.7,
+          "pss_mb": 27.0
+        },
+        {
+          "pid": 93785,
+          "name": "behavior_server",
+          "rss_mb": 50.7,
+          "pss_mb": 23.7
+        },
+        {
+          "pid": 93782,
+          "name": "amcl",
+          "rss_mb": 47.5,
+          "pss_mb": 20.8
+        },
+        {
+          "pid": 93781,
+          "name": "map_server",
+          "rss_mb": 45.4,
+          "pss_mb": 20.6
+        },
+        {
+          "pid": 93662,
+          "name": "slam_toolbox",
+          "rss_mb": 40.0,
+          "pss_mb": 18.5
+        },
+        {
+          "pid": 93787,
+          "name": "lifecycle_manager",
+          "rss_mb": 40.0,
+          "pss_mb": 16.2
+        },
+        {
+          "pid": 93775,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 39.0,
+          "pss_mb": 26.0
+        },
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93656,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93661,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.6,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93780,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.5,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.2,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 6.7
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 18.6,
+      "n_proc": 19,
+      "total_rss_mb": 898.7,
+      "total_pss_mb": 486.3,
+      "mem_available_mb": 1056.8,
+      "procs": [
+        {
+          "pid": 93790,
+          "name": "coverage_planner",
+          "rss_mb": 85.9,
+          "pss_mb": 56.3
+        },
+        {
+          "pid": 93695,
+          "name": "python3",
+          "rss_mb": 83.4,
+          "pss_mb": 51.6
+        },
+        {
+          "pid": 93791,
+          "name": "kidnap_recovery",
+          "rss_mb": 79.8,
+          "pss_mb": 50.8
+        },
+        {
+          "pid": 93786,
+          "name": "bt_navigator",
+          "rss_mb": 72.8,
+          "pss_mb": 45.8
+        },
+        {
+          "pid": 93783,
+          "name": "controller_server",
+          "rss_mb": 56.0,
+          "pss_mb": 27.2
+        },
+        {
+          "pid": 93784,
+          "name": "planner_server",
+          "rss_mb": 55.7,
+          "pss_mb": 27.0
+        },
+        {
+          "pid": 93785,
+          "name": "behavior_server",
+          "rss_mb": 50.7,
+          "pss_mb": 23.7
+        },
+        {
+          "pid": 93782,
+          "name": "amcl",
+          "rss_mb": 47.5,
+          "pss_mb": 20.8
+        },
+        {
+          "pid": 93781,
+          "name": "map_server",
+          "rss_mb": 45.4,
+          "pss_mb": 20.6
+        },
+        {
+          "pid": 93662,
+          "name": "slam_toolbox",
+          "rss_mb": 40.0,
+          "pss_mb": 18.5
+        },
+        {
+          "pid": 93787,
+          "name": "lifecycle_manager",
+          "rss_mb": 40.0,
+          "pss_mb": 16.2
+        },
+        {
+          "pid": 93775,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 39.0,
+          "pss_mb": 26.0
+        },
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93656,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93661,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.6,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93780,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.5,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.2,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 6.7
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 21.7,
+      "n_proc": 19,
+      "total_rss_mb": 898.7,
+      "total_pss_mb": 486.3,
+      "mem_available_mb": 1056.9,
+      "procs": [
+        {
+          "pid": 93790,
+          "name": "coverage_planner",
+          "rss_mb": 85.9,
+          "pss_mb": 56.3
+        },
+        {
+          "pid": 93695,
+          "name": "python3",
+          "rss_mb": 83.4,
+          "pss_mb": 51.6
+        },
+        {
+          "pid": 93791,
+          "name": "kidnap_recovery",
+          "rss_mb": 79.8,
+          "pss_mb": 50.8
+        },
+        {
+          "pid": 93786,
+          "name": "bt_navigator",
+          "rss_mb": 72.8,
+          "pss_mb": 45.7
+        },
+        {
+          "pid": 93783,
+          "name": "controller_server",
+          "rss_mb": 56.0,
+          "pss_mb": 27.2
+        },
+        {
+          "pid": 93784,
+          "name": "planner_server",
+          "rss_mb": 55.7,
+          "pss_mb": 27.0
+        },
+        {
+          "pid": 93785,
+          "name": "behavior_server",
+          "rss_mb": 50.7,
+          "pss_mb": 23.7
+        },
+        {
+          "pid": 93782,
+          "name": "amcl",
+          "rss_mb": 47.5,
+          "pss_mb": 20.8
+        },
+        {
+          "pid": 93781,
+          "name": "map_server",
+          "rss_mb": 45.4,
+          "pss_mb": 20.6
+        },
+        {
+          "pid": 93662,
+          "name": "slam_toolbox",
+          "rss_mb": 40.0,
+          "pss_mb": 18.5
+        },
+        {
+          "pid": 93787,
+          "name": "lifecycle_manager",
+          "rss_mb": 40.0,
+          "pss_mb": 16.2
+        },
+        {
+          "pid": 93775,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 39.0,
+          "pss_mb": 26.0
+        },
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93656,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93661,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.6,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93780,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.5,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.2,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 6.7
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 24.7,
+      "n_proc": 19,
+      "total_rss_mb": 898.8,
+      "total_pss_mb": 486.3,
+      "mem_available_mb": 1056.5,
+      "procs": [
+        {
+          "pid": 93790,
+          "name": "coverage_planner",
+          "rss_mb": 85.9,
+          "pss_mb": 56.3
+        },
+        {
+          "pid": 93695,
+          "name": "python3",
+          "rss_mb": 83.4,
+          "pss_mb": 51.6
+        },
+        {
+          "pid": 93791,
+          "name": "kidnap_recovery",
+          "rss_mb": 79.8,
+          "pss_mb": 50.8
+        },
+        {
+          "pid": 93786,
+          "name": "bt_navigator",
+          "rss_mb": 72.8,
+          "pss_mb": 45.7
+        },
+        {
+          "pid": 93783,
+          "name": "controller_server",
+          "rss_mb": 56.0,
+          "pss_mb": 27.2
+        },
+        {
+          "pid": 93784,
+          "name": "planner_server",
+          "rss_mb": 55.7,
+          "pss_mb": 27.0
+        },
+        {
+          "pid": 93785,
+          "name": "behavior_server",
+          "rss_mb": 50.7,
+          "pss_mb": 23.7
+        },
+        {
+          "pid": 93782,
+          "name": "amcl",
+          "rss_mb": 47.5,
+          "pss_mb": 20.8
+        },
+        {
+          "pid": 93781,
+          "name": "map_server",
+          "rss_mb": 45.4,
+          "pss_mb": 20.6
+        },
+        {
+          "pid": 93662,
+          "name": "slam_toolbox",
+          "rss_mb": 40.0,
+          "pss_mb": 18.5
+        },
+        {
+          "pid": 93787,
+          "name": "lifecycle_manager",
+          "rss_mb": 40.0,
+          "pss_mb": 16.2
+        },
+        {
+          "pid": 93775,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 39.0,
+          "pss_mb": 26.0
+        },
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93656,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93661,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.6,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93780,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.5,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.2,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 6.7
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 27.8,
+      "n_proc": 19,
+      "total_rss_mb": 898.8,
+      "total_pss_mb": 486.3,
+      "mem_available_mb": 1056.2,
+      "procs": [
+        {
+          "pid": 93790,
+          "name": "coverage_planner",
+          "rss_mb": 85.9,
+          "pss_mb": 56.3
+        },
+        {
+          "pid": 93695,
+          "name": "python3",
+          "rss_mb": 83.4,
+          "pss_mb": 51.6
+        },
+        {
+          "pid": 93791,
+          "name": "kidnap_recovery",
+          "rss_mb": 79.8,
+          "pss_mb": 50.8
+        },
+        {
+          "pid": 93786,
+          "name": "bt_navigator",
+          "rss_mb": 72.8,
+          "pss_mb": 45.7
+        },
+        {
+          "pid": 93783,
+          "name": "controller_server",
+          "rss_mb": 56.0,
+          "pss_mb": 27.2
+        },
+        {
+          "pid": 93784,
+          "name": "planner_server",
+          "rss_mb": 55.7,
+          "pss_mb": 27.0
+        },
+        {
+          "pid": 93785,
+          "name": "behavior_server",
+          "rss_mb": 50.7,
+          "pss_mb": 23.7
+        },
+        {
+          "pid": 93782,
+          "name": "amcl",
+          "rss_mb": 47.5,
+          "pss_mb": 20.8
+        },
+        {
+          "pid": 93781,
+          "name": "map_server",
+          "rss_mb": 45.4,
+          "pss_mb": 20.6
+        },
+        {
+          "pid": 93662,
+          "name": "slam_toolbox",
+          "rss_mb": 40.0,
+          "pss_mb": 18.5
+        },
+        {
+          "pid": 93787,
+          "name": "lifecycle_manager",
+          "rss_mb": 40.0,
+          "pss_mb": 16.2
+        },
+        {
+          "pid": 93775,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 39.0,
+          "pss_mb": 26.0
+        },
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93656,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 25.9
+        },
+        {
+          "pid": 93661,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.6,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93780,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.5,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 36.2,
+          "pss_mb": 14.1
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 6.7
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    }
+  ]
+}

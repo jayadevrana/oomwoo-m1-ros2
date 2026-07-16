@@ -1,0 +1,313 @@
+{
+  "label": "idle",
+  "n_proc": 4,
+  "peak_total_rss_mb": 84.5,
+  "peak_total_pss_mb": 64.2,
+  "total_cpu_pct": 0.2,
+  "window_s": 27.2,
+  "cpu_by_proc": {
+    "robot_state_publisher": 0.2,
+    "bash": 0.0,
+    "oomwoo_sim_mcu_serial.py": 0.0,
+    "oomwoo_runtime.launch.py": 0.0
+  },
+  "samples": [
+    {
+      "t": 3.0,
+      "n_proc": 4,
+      "total_rss_mb": 84.5,
+      "total_pss_mb": 63.9,
+      "mem_available_mb": 1418.3,
+      "procs": [
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 29.8
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 30.2,
+          "pss_mb": 25.3
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 7.6
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 6.1,
+      "n_proc": 4,
+      "total_rss_mb": 84.5,
+      "total_pss_mb": 63.9,
+      "mem_available_mb": 1418.3,
+      "procs": [
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 29.8
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 30.2,
+          "pss_mb": 25.3
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 7.6
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 9.1,
+      "n_proc": 4,
+      "total_rss_mb": 84.5,
+      "total_pss_mb": 63.9,
+      "mem_available_mb": 1418.3,
+      "procs": [
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 29.8
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 30.2,
+          "pss_mb": 25.3
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 7.6
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 12.1,
+      "n_proc": 4,
+      "total_rss_mb": 84.5,
+      "total_pss_mb": 63.9,
+      "mem_available_mb": 1418.3,
+      "procs": [
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 29.8
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 30.2,
+          "pss_mb": 25.3
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 7.6
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 15.1,
+      "n_proc": 4,
+      "total_rss_mb": 84.5,
+      "total_pss_mb": 63.9,
+      "mem_available_mb": 1418.3,
+      "procs": [
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 29.8
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 30.2,
+          "pss_mb": 25.3
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 7.6
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 18.2,
+      "n_proc": 4,
+      "total_rss_mb": 84.5,
+      "total_pss_mb": 63.9,
+      "mem_available_mb": 1418.3,
+      "procs": [
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 29.8
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 30.2,
+          "pss_mb": 25.3
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 7.6
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 21.2,
+      "n_proc": 4,
+      "total_rss_mb": 84.5,
+      "total_pss_mb": 64.2,
+      "mem_available_mb": 1422.0,
+      "procs": [
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 30.0
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 30.2,
+          "pss_mb": 25.5
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 7.6
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 24.2,
+      "n_proc": 4,
+      "total_rss_mb": 84.5,
+      "total_pss_mb": 64.2,
+      "mem_available_mb": 1422.0,
+      "procs": [
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 30.0
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 30.2,
+          "pss_mb": 25.5
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 7.6
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    },
+    {
+      "t": 27.2,
+      "n_proc": 4,
+      "total_rss_mb": 84.5,
+      "total_pss_mb": 64.2,
+      "mem_available_mb": 1422.0,
+      "procs": [
+        {
+          "pid": 93613,
+          "name": "oomwoo_runtime.launch.py",
+          "rss_mb": 38.9,
+          "pss_mb": 30.0
+        },
+        {
+          "pid": 93619,
+          "name": "robot_state_publisher",
+          "rss_mb": 30.2,
+          "pss_mb": 25.5
+        },
+        {
+          "pid": 93612,
+          "name": "oomwoo_sim_mcu_serial.py",
+          "rss_mb": 12.1,
+          "pss_mb": 7.6
+        },
+        {
+          "pid": 93593,
+          "name": "bash",
+          "rss_mb": 3.2,
+          "pss_mb": 1.1
+        }
+      ]
+    }
+  ]
+}
