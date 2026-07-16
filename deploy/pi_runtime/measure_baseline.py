@@ -107,7 +107,8 @@ def main():
     ap.add_argument("--interval", type=float, default=2.0)
     ap.add_argument("--pattern", default=DEFAULT_PATTERN)
     ap.add_argument("--exclude",
-                    default=r"(ros2 bag|rosbag2| bag play|measure_baseline)",
+                    default=r"(ros2 bag|rosbag2| bag play|measure_baseline|"
+                            r"measure_pi_baseline|pi_baseline_all|rerun_baseline)",
                     help="drop test scaffolding (bag player, this sampler) from "
                          "the measured graph so totals are the robot's alone")
     ap.add_argument("--out", default="/tmp/baseline.json")

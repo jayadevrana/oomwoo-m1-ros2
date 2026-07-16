@@ -90,7 +90,8 @@ from the 5 Hz bag.
 | slam (+ slam_toolbox @5 Hz) | 5 | 120.9 | **73.3** | 6.6 | 1368 |
 | nav (AMCL + trimmed Nav2 + both M1 behaviours) | 13 | 614.7 | **337.3** | 224.2 | 1134 |
 
-Top consumers in the full (nav) graph, peak-sample PSS (sums to the 337 total):
+Top consumers in the full (nav) graph, peak-sample PSS (these sum to ~336; the
+balance is a ~1 MB measurement-harness shell, dropped from later runs):
 
 | Node | PSS (MB) | | Node | PSS (MB) |
 |---|---|---|---|---|
