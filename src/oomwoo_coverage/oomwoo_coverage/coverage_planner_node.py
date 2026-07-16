@@ -66,7 +66,13 @@ class CoveragePlanner(Node):
         self.declare_parameter('cleaning_radius', 0.16)   # m, effective clean swath / 2
         self.declare_parameter('row_overlap', 0.10)       # fraction of swath overlapped
         self.declare_parameter('robot_radius', 0.17)      # m, for obstacle inflation
-        self.declare_parameter('coverage_target', 0.90)   # stop when reached
+        # coverage_target is a GATE the harness asserts on, not a stop switch:
+        # by default the sweep runs to completion (all rows + gap-fill passes)
+        # so the reported number is uncapped — it can distinguish a planner
+        # that reaches 97% from one that barely scrapes 90%. Set
+        # stop_at_target:=true for battery-frugal behaviour on a real robot.
+        self.declare_parameter('coverage_target', 0.90)
+        self.declare_parameter('stop_at_target', False)
         self.declare_parameter('sweep_axis', 'x')         # 'x' = horizontal rows
         self.declare_parameter('global_frame', 'map')
         self.declare_parameter('robot_base_frame', 'base_footprint')
@@ -77,6 +83,7 @@ class CoveragePlanner(Node):
         self.row_overlap = self.get_parameter('row_overlap').value
         self.robot_radius = self.get_parameter('robot_radius').value
         self.coverage_target = self.get_parameter('coverage_target').value
+        self.stop_at_target = self.get_parameter('stop_at_target').value
         self.sweep_axis = self.get_parameter('sweep_axis').value
         self.global_frame = self.get_parameter('global_frame').value
         self.base_frame = self.get_parameter('robot_base_frame').value
@@ -331,8 +338,11 @@ class CoveragePlanner(Node):
             # sweep direction can't reach; a targeted gap-fill pass visits the
             # remaining uncovered clusters directly (real vacuums do the same
             # spot-recleaning). Cheap in path since it only touches what's left.
-            if self.ext_ratio < self.coverage_target and \
-                    self.gapfill_passes < self.max_gapfill:
+            # run-to-completion mode gap-fills until the passes are spent or
+            # nothing uncovered remains — not merely until the gate is met
+            if self.gapfill_passes < self.max_gapfill and \
+                    (not self.stop_at_target
+                     or self.ext_ratio < self.coverage_target):
                 gaps = self._gapfill_waypoints()
                 if gaps:
                     self.gapfill_passes += 1
@@ -346,6 +356,7 @@ class CoveragePlanner(Node):
             self.get_logger().info(
                 f'coverage complete: {self.ext_ratio:.1%} covered')
             self.finished = True
+            self.active_pub.publish(Bool(data=False))
             return
         if not self.nav_client.server_is_ready():
             return                      # try again next tick
@@ -447,11 +458,13 @@ class CoveragePlanner(Node):
             return
         ratio = self.ext_ratio
 
-        if ratio >= self.coverage_target and not self.finished:
+        if self.stop_at_target and ratio >= self.coverage_target \
+                and not self.finished:
             self.get_logger().info(
                 f'coverage target {self.coverage_target:.0%} reached '
-                f'({ratio:.1%}); stopping')
+                f'({ratio:.1%}); stopping (stop_at_target=true)')
             self.finished = True
+            self.active_pub.publish(Bool(data=False))
             if self.goal_handle is not None:
                 self.goal_handle.cancel_goal_async()
                 self.goal_handle = None

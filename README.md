@@ -114,12 +114,21 @@ instead of drifting near the 30 s limit.
 
 | Node | Param | Default | Meaning |
 |---|---|---|---|
-| coverage_planner | `cleaning_radius` | 0.20 m | half the cleaning swath |
-| coverage_planner | `robot_radius` | 0.30 m | wall clearance the planner keeps |
+| coverage_planner | `cleaning_radius` | 0.20 m | half the cleaning swath (see assumption below) |
+| coverage_planner | `robot_radius` | 0.30 m | wall clearance the planner keeps (planning only — never used by the meter) |
+| coverage_meter | `robot_radius` | 0.1745 m | the TRUE body radius; the meter's denominator is built from real geometry, not the planner's clearance, so floor a timid planner skips counts against the score |
 | coverage_planner | `max_gapfill` | 3 | gap-fill passes after the main sweep |
 | coverage_meter | `edge_margin` | 0.15 m | wall strip left to floor-care |
 | kidnap_recovery | `match_score_ok` | 0.75 | scan-match confidence to accept |
 | kidnap_recovery | `recovery_timeout_sec` | 30 | give up (→ dock-cycle) after this |
+
+**Explicit assumption — the cleaning swath.** `cleaning_radius = 0.20` means a
+0.40 m swath on a 0.349 m-wide robot: wider than the body. That is only true if
+side-brush reach counts as "cleaned"; the planner spaces rows 0.38 m apart on
+that assumption. If the real brush covers less, set `cleaning_radius` to the
+actual half-swath — rows tighten, the run gets longer, and the score reflects
+the real machine. The sim can't validate the brush; this parameter is where
+that physical fact enters.
 
 ## The test world and map
 

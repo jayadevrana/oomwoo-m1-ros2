@@ -30,7 +30,9 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(
             os.path.join(pkg_sim, 'launch', 'sim_bringup.launch.py')),
         launch_arguments={'with_nav': 'false',
-                          'robot_model': robot_model}.items())
+                          'robot_model': robot_model,
+                          # gui:=true watches this exact regression in the GUI
+                          'gui': LaunchConfiguration('gui')}.items())
 
     kidnap_recovery = Node(
         package='oomwoo_nav_localize', executable='kidnap_recovery',
@@ -55,6 +57,7 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription([
         DeclareLaunchArgument('robot_model', default_value='oomwoo_one'),
+        DeclareLaunchArgument('gui', default_value='false'),
         base,
         # start recovery + injector once AMCL is up and localized
         TimerAction(period=20.0, actions=[kidnap_recovery, kidnap_injector]),

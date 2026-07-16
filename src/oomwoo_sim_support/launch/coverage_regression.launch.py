@@ -42,9 +42,17 @@ def generate_launch_description() -> LaunchDescription:
         # pinned so the regression gate is reproducible on any machine;
         # override robot_model:=<pkg> to run the suite against another vacuum.
         DeclareLaunchArgument('robot_model', default_value='oomwoo_one'),
+        # gui:=true watches this exact regression in the Gazebo GUI
+        DeclareLaunchArgument('gui', default_value='false'),
     ]
     robot_radius = ParameterValue(
         LaunchConfiguration('robot_radius'), value_type=float)
+    # The METER always scores against the true robot geometry, never the
+    # planner's clearance. robot_radius above is planning conservatism (Nav2
+    # margin); if the meter shared it, a more timid planner would shrink the
+    # denominator and score HIGHER while cleaning LESS. Floor the planner
+    # won't enter must count against the score.
+    true_robot_radius = 0.1745
 
     base = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -56,11 +64,13 @@ def generate_launch_description() -> LaunchDescription:
             'y_pose': LaunchConfiguration('y_pose'),
             'yaw': LaunchConfiguration('yaw'),
             'robot_model': LaunchConfiguration('robot_model'),
+            'gui': LaunchConfiguration('gui'),
         }.items())
 
     coverage_meter = Node(
         package='oomwoo_sim_support', executable='coverage_meter', output='screen',
-        parameters=[{'cleaning_radius': cleaning_radius, 'robot_radius': robot_radius,
+        parameters=[{'cleaning_radius': cleaning_radius,
+                     'robot_radius': true_robot_radius,
                      'coverage_target': coverage_target, 'use_sim_time': True}],
         remappings=[('map', '/map'),
                     ('ground_truth/pose', '/ground_truth/pose'),

@@ -42,7 +42,8 @@ class CoverageRunner(Node):
         super().__init__('coverage_regression_runner')
         self.declare_parameter('coverage_target', 0.90)
         self.declare_parameter('efficiency_target', 0.80)
-        self.declare_parameter('max_sim_time_s', 1800.0)
+        # generous: run-to-completion sweeps outlast the old stop-at-90% runs
+        self.declare_parameter('max_sim_time_s', 3600.0)
         self.declare_parameter('plateau_s', 180.0)
         self.declare_parameter('plateau_eps', 0.005)
         self.declare_parameter('report_path', '/root/coverage_report.json')
@@ -71,6 +72,18 @@ class CoverageRunner(Node):
             Float32, '/coverage_meter/efficiency', self._on_eff, 10)
         self.create_subscription(
             Bool, '/coverage_meter/sim_unstable', self._on_unstable, latched)
+        # planner publishes cleaning_active False when the sweep + gap-fill
+        # passes are exhausted — the honest end-of-job signal (latched)
+        self.sweep_started = False
+        self.sweep_complete = False
+        self.create_subscription(
+            Bool, '/coverage_planner/cleaning_active', self._on_active, latched)
+
+    def _on_active(self, msg):
+        if msg.data:
+            self.sweep_started = True
+        elif self.sweep_started:
+            self.sweep_complete = True
 
     def _on_cov(self, msg):
         self.coverage = float(msg.data)
@@ -105,8 +118,16 @@ class CoverageRunner(Node):
             if self.coverage > self.best + self.plateau_eps:
                 self.best = self.coverage
                 self.last_gain_sim_t = self._sim_now()
-            if self.coverage >= self.cov_target:
-                reason = 'target_reached'
+            # No break at coverage_target: the target is the PASS GATE, not a
+            # stop switch. The run ends when the sweep genuinely finishes (or
+            # stalls), so the reported number is uncapped and informative —
+            # 97% and 90.2% no longer read the same.
+            if self.sweep_complete:
+                reason = 'sweep_complete'
+                # let the meter's last 1 Hz update land before scoring
+                t_grace = time.time()
+                while rclpy.ok() and time.time() - t_grace < 3.0:
+                    rclpy.spin_once(self, timeout_sec=0.2)
                 break
             if self._sim_now() - self.last_gain_sim_t >= self.plateau_s:
                 reason = 'plateau'
