@@ -149,10 +149,13 @@ world-aligned map by slicing the stock collision meshes at the robot's height
 band (2–20 cm). Open-under furniture contributes only its legs, so the floor
 beneath the table counts as cleanable — which is the whole point of a vacuum.
 
-Coverage numbers for the stock room are being re-measured against the pure
-stock world (previous published figures were taken with the now-removed
-override in place and are superseded); the script prints the current result
-and writes `coverage_report.json`.
+Measured on the **pure stock world** (no overrides): **88.9 % coverage**,
+efficiency 32.9 %, sim stable (`pose_jumps=0`), ended on plateau. Essentially
+identical to the earlier override-era figure (89.7 %) — which is the point: the
+override never mattered, the stock mesh collisions were doing the job all along.
+The room is tight (~1.5 m widest gap), so efficiency lands well below the open
+`test_room`'s by design; the last ~11 % is pockets Nav2's local costmap can't
+enter. The script prints this and writes `coverage_report.json`.
 
 ## One gotcha: run on x86-64, not ARM
 

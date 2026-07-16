@@ -62,10 +62,12 @@ You were right on both counts, and the repo now reflects it:
   up on several waypoints in a row inside inflated-lethal pockets, the planner
   reverses straight out open-loop and resumes the sweep.
 
-Run it: `deploy/run_coverage_livingroom.sh`. The previously reported numbers
-(89.7% / 31.9%) were measured with the now-removed override in place, so treat
-them as superseded — I'm re-running against the pure stock world and will send
-the corrected figure.
+Run it: `deploy/run_coverage_livingroom.sh`. Measured on the **pure stock
+world** (no overrides): **88.9% coverage**, efficiency 32.9%, stable
+(pose_jumps=0), ended on plateau. That's within a whisker of the earlier
+override-era 89.7% — which confirms the override never did anything useful; the
+stock mesh collisions were already correct. The tight room caps efficiency, and
+the last ~11% is pockets Nav2's local costmap can't enter.
 
 ## Feedback round (post-M1 review)
 
