@@ -56,8 +56,8 @@ if [ "$RUNS" -gt 1 ]; then
   python3 - "$REPORT_DIR" <<'PY'
 import json, glob, statistics as st, sys
 rs = [json.load(open(p)) for p in sorted(glob.glob(sys.argv[1] + '/run*.json'))]
-for k in ('coverage', 'efficiency'):
-    v = [r[k] for r in rs]
+for k in ('coverage', 'efficiency_at_target', 'efficiency_final'):
+    v = [r.get(k, r.get('efficiency', 0.0)) for r in rs]
     print(f"  {k:11}: min={min(v):.4f} max={max(v):.4f} mean={st.mean(v):.4f}"
           + (f" stdev={st.stdev(v):.4f}" if len(v) > 1 else ""))
 print(f"  passes     : {sum(r['pass'] for r in rs)}/{len(rs)}"
