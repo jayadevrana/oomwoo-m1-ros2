@@ -49,14 +49,17 @@ def short(cl):
     return os.path.basename(toks[0]) if toks else cl[:24]
 
 
-def match_pids(rx):
+def match_pids(rx, ex=None):
     out = []
     for d in glob.glob("/proc/[0-9]*"):
         pid = int(os.path.basename(d))
         if pid == os.getpid():
             continue
         cl = cmdline(pid)
-        if cl and rx.search(cl):
+        # rx selects the ROS graph; ex drops test scaffolding (the bag player
+        # stands in for the LiDAR/MCU driver and must NOT count against the
+        # robot's onboard budget) and this sampler itself.
+        if cl and rx.search(cl) and not (ex and ex.search(cl)):
             out.append((pid, cl))
     return out
 
@@ -103,11 +106,16 @@ def main():
     ap.add_argument("--duration", type=float, default=20.0)
     ap.add_argument("--interval", type=float, default=2.0)
     ap.add_argument("--pattern", default=DEFAULT_PATTERN)
+    ap.add_argument("--exclude",
+                    default=r"(ros2 bag|rosbag2| bag play|measure_baseline)",
+                    help="drop test scaffolding (bag player, this sampler) from "
+                         "the measured graph so totals are the robot's alone")
     ap.add_argument("--out", default="/tmp/baseline.json")
     a = ap.parse_args()
     rx = re.compile(a.pattern)
+    ex = re.compile(a.exclude) if a.exclude else None
 
-    base = {pid: cpu_ticks(pid) for pid, _ in match_pids(rx)}
+    base = {pid: cpu_ticks(pid) for pid, _ in match_pids(rx, ex)}
     w0 = time.time()
     samples = []
     end = w0 + a.duration
@@ -115,7 +123,7 @@ def main():
         time.sleep(a.interval)
         trss = tpss = 0
         procs = []
-        for pid, cl in match_pids(rx):
+        for pid, cl in match_pids(rx, ex):
             rss, pss = rss_pss_kb(pid)
             trss += rss
             tpss += pss
@@ -132,7 +140,7 @@ def main():
         })
     w1 = time.time()
     cpu = {}
-    for pid, cl in match_pids(rx):
+    for pid, cl in match_pids(rx, ex):
         dticks = cpu_ticks(pid) - base.get(pid, cpu_ticks(pid))
         cpu[short(cl)] = round(100.0 * dticks / CLK_TCK / (w1 - w0), 1)
 
@@ -144,7 +152,11 @@ def main():
         "n_proc": samples[-1]["n_proc"],
         "peak_total_rss_mb": peak_rss,
         "peak_total_pss_mb": peak_pss,
-        "total_cpu_pct": total_cpu,
+        # CPU% is a MEAN over the sampling window (Σ utime+stime / wall-secs),
+        # taken after the settle delay — i.e. steady-state load, not the
+        # launch/costmap-activation transient. Report it as an average.
+        "mean_cpu_pct_over_window": total_cpu,
+        "cpu_is_window_mean": True,
         "window_s": round(w1 - w0, 1),
         "cpu_by_proc": dict(sorted(cpu.items(), key=lambda kv: -kv[1])),
         "samples": samples,
@@ -152,7 +164,8 @@ def main():
     with open(a.out, "w") as f:
         json.dump(report, f, indent=2)
     print(f"[{a.label}] procs={report['n_proc']}  peak RSS={peak_rss} MB  "
-          f"peak PSS={peak_pss} MB  CPU={total_cpu}%  ({report['window_s']}s) -> {a.out}")
+          f"peak PSS={peak_pss} MB  mean CPU={total_cpu}%  "
+          f"({report['window_s']}s) -> {a.out}")
 
 
 if __name__ == "__main__":

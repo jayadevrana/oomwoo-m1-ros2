@@ -5,10 +5,12 @@ Milestone 2. Validates [xbattlax's Raspberry Pi runtime scaffold][pr1]
 reports the RSS/PSS/CPU baseline the scaffold's `pi4_4gb_runtime_plan.md` calls
 for. Native Ubuntu 24.04 / ROS 2 Jazzy — no Docker, no Gazebo on the robot.
 
-Measured end-to-end on the client's board: a Raspberry Pi 4 Model B Rev 1.4,
-Ubuntu 24.04.4 LTS, ROS 2 Jazzy, RAM capped at 2 GB (`total_mem=2048` in
-`/boot/firmware/config.txt` — `free` reports 1.8 GiB). 2 GB is the *harder* of
-the plan's two targets, so the numbers below clear the 4 GB case as well.
+Measured end-to-end on the client's board: a Raspberry Pi 4 Model B, Ubuntu
+24.04.4 LTS, ROS 2 Jazzy. The board is a **physical 2 GB unit** — its revision
+code `b03114` decodes to 2 GB (memory nibble 3), and `free` reports 1.8 GiB.
+(`total_mem=2048` is set in `/boot/firmware/config.txt` per the client's
+request; on an already-2 GB board it is a no-op.) 2 GB is the *harder* of the
+plan's two targets, so the numbers below clear the 4 GB case as well.
 
 ## What's here
 
@@ -64,64 +66,78 @@ activates) → sample RSS/PSS/CPU for a window → tear down.
 ## Baseline — measured on the real Pi 4 (2 GB)
 
 RSS = resident set; **PSS** = proportional set size (the honest figure when
-nodes share libraries — use this against the 2 GB / 4 GB targets). CPU% is
-summed across processes over the window (Pi 4 has 4 cores, so 400% = fully
-saturated). `min free` is the low-water mark of `MemAvailable` across the phase
-— what the OS actually had spare at the worst moment.
+nodes share libraries — use this against the 2 GB / 4 GB targets). **CPU% is a
+mean over the sampling window after an 18 s settle** — i.e. steady-state load,
+not the launch/costmap-activation transient (which is briefly higher). The Pi 4
+has 4 cores, so 400% = fully saturated. `min free` is the low-water mark of
+`MemAvailable` across the phase — what the OS actually had spare at the worst
+moment.
 
-Measured on the **Raspberry Pi 4 Model B Rev 1.4, 2 GB cap, Ubuntu 24.04.4,
-ROS 2 Jazzy**. nav lifecycle reaches "active"; SLAM maps from the 5 Hz bag.
+**What counts toward the totals:** the robot's own ROS graph plus the always-on
+MCU serial link. The `ros2 bag play` process that replays scans is a *test
+stand-in for the LiDAR/MCU sensor driver* and is **excluded** from the totals
+(`measure_baseline.py --exclude`); on the robot the scans come off the wire, not
+a bag. Each phase fully tears down before the next is measured, so nothing leaks
+forward.
 
-| Phase | Procs | RSS (MB) | **PSS (MB)** | CPU % | min free (MB) |
+Measured on the **Raspberry Pi 4 Model B Rev 1.4 (revision `b03114` → a 2 GB
+board), Ubuntu 24.04.4, ROS 2 Jazzy**. nav lifecycle reaches "active"; SLAM maps
+from the 5 Hz bag.
+
+| Phase | Procs | RSS (MB) | **PSS (MB)** | mean CPU % | min free (MB) |
 |---|---|---|---|---|---|
-| idle (rsp + MCU serial) | 4 | 84.5 | **64.2** | 0.2 | 1418 |
-| slam (+ slam_toolbox @5 Hz) | 8 | 270.3 | **165.6** | 17.6 | 1340 |
-| nav (+ AMCL + Nav2 + both M1 behaviours) | 19 | 898.8 | **486.3** | 242.4 | 1048 |
+| idle (rsp + MCU serial + launch) | 4 | 84.7 | **64.4** | 0.3 | 1421 |
+| slam (+ slam_toolbox @5 Hz) | 5 | 120.9 | **73.3** | 6.6 | 1368 |
+| nav (AMCL + trimmed Nav2 + both M1 behaviours) | 13 | 614.7 | **337.3** | 224.2 | 1134 |
 
-Top consumers in the full (nav) graph, peak-sample PSS:
+Top consumers in the full (nav) graph, peak-sample PSS (sums to the 337 total):
 
 | Node | PSS (MB) | | Node | PSS (MB) |
 |---|---|---|---|---|
-| coverage_planner (M1) | 56.3 | | controller_server | 27.2 |
-| kidnap_recovery (M1) | 50.8 | | planner_server | 27.0 |
-| bt_navigator | 45.8 | | behavior_server | 23.7 |
-| launch/python nodes (×4) | ~26 ea | | amcl | ~15 |
+| coverage_planner (M1) | 56.4 | | amcl | 20.8 |
+| kidnap_recovery (M1) | 50.6 | | map_server | 20.7 |
+| bt_navigator | 45.5 | | lifecycle_manager | 16.0 |
+| controller_server | 27.2 | | robot_state_publisher | 14.8 |
+| planner_server | 27.1 | | oomwoo_runtime.launch.py | 26.7 |
+| behavior_server | 23.5 | | MCU serial | 6.9 |
 
 **Verdict on the 2 GB target.** The full stack — localization + the trimmed
-Nav2 + both M1 behaviours loaded at once — peaks at **486 MB PSS / 899 MB RSS**,
-and the OS still had **1048 MB free at the worst moment** on a 2 GB board. The
-2 GB target is met **without a C++/Rust rewrite**, with room to spare. Two
+Nav2 + both M1 behaviours loaded at once — peaks at **337 MB PSS / 615 MB RSS**,
+and the OS still had **1134 MB free at the worst moment** on a 2 GB board. The
+2 GB target is met **without a C++/Rust rewrite**, with wide margin. Two
 observations for any future reduction work:
 
 - The biggest single consumers are the **two M1 Python behaviours**
   (coverage_planner 56 MB, kidnap_recovery 51 MB PSS, numpy-backed) — each more
   than any individual C++ Nav2 server. If RAM ever gets tight, porting those is
   a bigger lever than touching Nav2.
-- Next, per the plan: **ROS 2 composition** to collapse the ~19 separate nav
-  processes (four are just `ros2 launch`/python overhead at ~26 MB each) into a
-  few component containers removes per-process cost.
+- Next, per the plan: **ROS 2 composition** to fold the separate nav processes
+  into a few component containers removes per-process overhead.
 
-### Pre-hardware estimate — and how well it held
+CPU: nav's steady-state mean is 224% ≈ 2.2 of the 4 cores. The transient during
+lifecycle activation is higher and unmeasured here (the sampler starts after an
+18 s settle); a headroom claim rests on the mean, not a measured peak.
 
-Before the board was available, the same three phases were run on **native
-ARM64 Ubuntu 24.04 / ROS 2 Jazzy** (GCP `t2a-standard-2`, Ampere Altra — same OS,
-arch and apt ROS packages) to predict the baseline. The prediction and the
-on-board reality:
+### Pre-hardware estimate (cloud ARM64)
 
-| Phase | PSS est → real | RSS est → real | CPU est → real |
-|---|---|---|---|
-| idle | 64 → **64.2** | 89 → **84.5** | 0.0 → **0.2** |
-| slam | 166 → **165.6** | 276 → **270.3** | 5.0 → **17.6** |
-| nav | 491 → **486.3** | 913 → **898.8** | 59 → **242.4** |
+Before the board was available the same three phases were run on native ARM64
+Ubuntu 24.04 / ROS 2 Jazzy (GCP `t2a-standard-2`, Ampere Altra) to predict the
+baseline. Two calls it got right and one wrong, stated plainly:
 
-RAM landed within ~1% — PSS is portable across the two ARM64 hosts, as expected.
-**CPU was optimistic by ~4×**, exactly as flagged: the Ampere Altra core is far
-faster than the Pi's Cortex-A72, so the cloud figure was always a lower bound.
-Even so, nav's real 242% is ~2.4 of the Pi's 4 cores at peak — headroom on CPU
-too.
+- **Right — ranking + fits-in-2 GB.** It correctly predicted the two M1 Python
+  behaviours as the top RAM consumers and that the whole stack fits well under
+  2 GB without a rewrite. Both hold on the board.
+- **Right — CPU is optimistic on cloud.** As flagged, the Ampere Altra core is
+  much faster than the Pi's Cortex-A72; the cloud CPU figure was a lower bound.
+- **Wrong — the absolute PSS was inflated.** The cloud run (and my *first*
+  on-board run) counted the `ros2 bag play` replay harness and leaked
+  cross-phase nodes in the totals, which put nav at ~490 MB. Excluding the
+  harness and reaping between phases — the numbers above — gives the honest
+  337 MB. Conclusion unchanged, and stronger.
 
 Reproduce on the board: `BAG=$PWD/scan_bag bash measure_pi_baseline.sh` — it
-writes the same `baseline_report.json` these tables come from.
+writes the `baseline_report.json` / per-phase JSON in `results/` these tables
+come from.
 
 ### Pi setup note (reproducing from a fresh Ubuntu Server image)
 

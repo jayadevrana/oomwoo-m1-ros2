@@ -37,31 +37,56 @@ python3 "$SERIAL" --link /tmp/oomwoo-mcu-serial >/tmp/mcu.log 2>&1 &
 MCU=$!
 trap 'kill $MCU 2>/dev/null; pkill -f oomwoo_runtime 2>/dev/null; pkill -f "bag play" 2>/dev/null || true' EXIT
 
+# The always-on MCU serial must survive every phase; NODES is everything the
+# per-phase launch spawns, which must be fully reaped before the next phase
+# measures (a bare `kill -INT` on the ros2-launch parent leaves children like
+# slam_toolbox alive, which then leak into the next phase's totals).
+NODES='oomwoo_runtime|ros2 launch|slam_toolbox|amcl|controller_server|planner_server|bt_navigator|behavior_server|lifecycle_manager|map_server|robot_state_publisher|coverage_planner|kidnap_recovery|waypoint_follower|velocity_smoother|collision_monitor|component_container|ros2 bag|rosbag2'
+
+reap() {
+  # SIGINT the graph + bag, wait for a clean exit, then SIGKILL any straggler.
+  pkill -INT -f "$NODES" 2>/dev/null || true
+  for _ in $(seq 1 15); do
+    pgrep -f "$NODES" >/dev/null 2>&1 || break
+    sleep 1
+  done
+  pkill -KILL -f "$NODES" 2>/dev/null || true
+  sleep 2
+  # `|| true` is load-bearing: under `set -eo pipefail`, pgrep exiting 1 (the
+  # CLEAN case — nothing left to kill) makes the command-substitution fail and
+  # would abort the whole run. reap is called bare, so it must return 0.
+  local left
+  left=$(pgrep -f "$NODES" 2>/dev/null | wc -l | tr -d ' ') || true
+  [ "${left:-0}" = 0 ] || echo "  [reap] warning: $left graph procs still alive"
+  return 0
+}
+
 run_phase() {
   local mode="$1"
   echo "==== phase: $mode ===="
+  reap                        # guarantee a clean graph before we start
   local BP=""
   if [ "$mode" != idle ]; then
     # bag LEADS the graph: on a real robot the odom TF + /clock are always
     # flowing, so SLAM/Nav2 must see them before activating or the costmap
     # aborts on a missing base_link->odom transform. Give it a head start.
+    # The bag player is EXCLUDED from the measured totals (measure_baseline.py
+    # --exclude) — it stands in for the sensor driver, not the robot's budget.
     ros2 bag play "$BAG" --clock 100 > "$OUT/$mode.bag.log" 2>&1 &
     BP=$!
     sleep 8
   fi
   ros2 launch "$LAUNCH" mode:="$mode" use_sim_time:=true > "$OUT/$mode.launch.log" 2>&1 &
-  local LP=$!
   sleep "$SETTLE"
   python3 "$MEASURE" --label "$mode" --duration "$WINDOW" --interval 3 \
     --out "$OUT/$mode.json"
-  kill -INT $LP 2>/dev/null || true
-  [ -n "$BP" ] && kill -INT $BP 2>/dev/null || true
-  sleep 5
+  reap                        # tear the whole graph down before the next phase
 }
 
 run_phase idle
 run_phase slam
 run_phase nav
+reap
 
 echo "==== combined baseline ===="
 python3 - "$OUT" <<'PY'
@@ -75,11 +100,12 @@ for m in ('idle', 'slam', 'nav'):
         rows.append({'phase': m, 'n_proc': r['n_proc'],
                      'rss_mb': r['peak_total_rss_mb'],
                      'pss_mb': r['peak_total_pss_mb'],
-                     'cpu_pct': r['total_cpu_pct']})
-print(f"{'phase':6} {'procs':>5} {'RSS_MB':>8} {'PSS_MB':>8} {'CPU%':>7}")
+                     'mean_cpu_pct': r.get('mean_cpu_pct_over_window',
+                                           r.get('total_cpu_pct'))})
+print(f"{'phase':6} {'procs':>5} {'RSS_MB':>8} {'PSS_MB':>8} {'meanCPU%':>9}")
 for r in rows:
     print(f"{r['phase']:6} {r['n_proc']:5d} {r['rss_mb']:8.1f} "
-          f"{r['pss_mb']:8.1f} {r['cpu_pct']:7.1f}")
+          f"{r['pss_mb']:8.1f} {r['mean_cpu_pct']:9.1f}")
 json.dump({'phases': rows}, open(os.path.join(d, 'baseline_report.json'), 'w'),
           indent=2)
 print('\\nwrote', os.path.join(d, 'baseline_report.json'))
