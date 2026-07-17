@@ -82,6 +82,17 @@ def test_decompose_sofa_splits_into_four_cells():
     assert total == int(free.sum()), 'decomposition must cover all free cells'
 
 
+def test_decompose_two_obstacles_seven_cells():
+    free = np.zeros((40, 40), dtype=bool)
+    free[1:39, 1:39] = True
+    free[8:14, 5:15] = False
+    free[22:30, 20:35] = False
+    cells = _decompose_cells(free)
+    assert len(cells) == 7
+    total = sum(b - a + 1 for cell in cells for _, a, b in cell)
+    assert total == int(free.sum())
+
+
 def test_decompose_no_cell_straddles_the_obstacle():
     free = np.zeros((30, 30), dtype=bool)
     free[1:29, 1:29] = True

@@ -50,7 +50,8 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument('y_pose', default_value='0.0'),
         DeclareLaunchArgument('yaw', default_value='0.0'),
         # planning clearance ALIGNED WITH THE REAL MACHINE: true inscribed
-        # radius 0.1745 + 1 cm. A vacuum is meant to touch things (that's the
+        # radius 0.1745 rounded up to 0.18 (~5 mm margin). A vacuum is meant
+        # to touch things (that's the
         # bumper's job) — inflated clearance (the old 0.30/0.24) sealed off
         # every gap under 2x the value, which is why under-furniture never
         # happened. Contact/wedging risk is carried by the wedge-escape path.

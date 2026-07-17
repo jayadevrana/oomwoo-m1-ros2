@@ -4,7 +4,7 @@
 # Same harness as run_coverage_regression.sh, pointed at the cluttered
 # living_room + its world-aligned map, spawning at the clearest floor cell.
 # Uses the PURE STOCK world and models — no overrides (stock mesh collisions
-# work headless). robot_radius 0.18 = true inscribed radius + 1cm, aligned with
+# work headless). robot_radius 0.18 = true inscribed 0.1745 rounded up (~5 mm), aligned with
 # the meter and Nav2 footprint: gaps down to ~0.4 m (under-furniture leg gaps)
 # stay sweepable. Contact is a design feature (bumper), not a failure. The
 # cell-decomposition sweep reports the honest number for a tight room.
