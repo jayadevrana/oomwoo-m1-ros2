@@ -83,7 +83,10 @@ bash /ros_ws/src/oomwoo-m1/deploy/run_coverage_livingroom.sh
 
 No display needed — Gazebo runs with `--headless-rendering`, so this drops
 straight into CI. To watch the identical sim with the Gazebo GUI, add
-`gui:=true` to any launch. To run against another vacuum model, use the
+`gui:=true` to any launch **or to any of the three run scripts**
+(`bash deploy/run_coverage_regression.sh gui:=true` — the scripts forward
+extra args to the launch, and skip forcing software GL when the GUI is up).
+To run against another vacuum model, use the
 kaiaai convention (`kaia config robot.model <pkg>`) or pass
 `robot_model:=<pkg>`; the regressions pin `oomwoo_one` for reproducibility.
 `RUNS=3` before any script repeats it and prints the variance. If the meter
@@ -172,15 +175,19 @@ with the true-geometry meter: **89.3 % coverage** (`end_reason=sweep_complete`
 — the planner genuinely exhausted its sweep + gap-fill passes), efficiency
 32.0 %, sim stable (`pose_jumps=0`). Consistent with earlier runs (88.9 %,
 override-era 89.7 %) — the stock mesh collisions were doing the job all along.
-The room is tight (~1.5 m widest gap), so efficiency lands well below the open
+The room is tight (max obstacle clearance ~0.78 m anywhere, by distance
+transform of the map), so efficiency lands well below the open
 `test_room`'s by design; the last ~11 % is pockets Nav2's local costmap can't
 enter. The script prints this and writes `coverage_report.json`.
 
-One decoupling data point worth recording: with the meter switched from the
-planner's clearance (0.24) to the true body radius (0.1745), the living_room
-denominator is **byte-identical (5661 cells)** — the `cleaning_radius`
-dilation reclaims the erosion difference at these radii. So the coupling was
-structurally wrong (fixed) but empirically immaterial in this world too.
+The decoupling's measured effect (reproduce with
+`tools/compute_denominator.py`): switching the meter from the planner's
+clearance to the true body radius grows the denominator 5647 → 5661 cells
+(+0.25%) here and 13637 → 13696 (+0.43%) in test_room — i.e. the coupled
+meter *was* slightly inflating scores, in the direction the review predicted;
+the magnitude just turns out to be fractions of a percent. Fixed regardless:
+the meter is pinned to 0.1745 and no planner setting can shrink the
+denominator again.
 
 ## One gotcha: run on x86-64, not ARM
 

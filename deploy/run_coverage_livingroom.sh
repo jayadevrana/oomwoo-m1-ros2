@@ -27,6 +27,7 @@ X=${X:-0.32}; Y=${Y:-1.59}; YAW=${YAW:-0.0}
 echo "[run] headless coverage on living_room"
 echo "[run] world=$WORLD"
 echo "[run] map=$MAP  spawn=($X,$Y)  robot_radius=0.24"
-export LAUNCH_ARGS="world:=$WORLD map:=$MAP x_pose:=$X y_pose:=$Y yaw:=$YAW robot_radius:=0.24"
+# preserve any incoming LAUNCH_ARGS and forward extra CLI args (e.g. gui:=true)
+export LAUNCH_ARGS="world:=$WORLD map:=$MAP x_pose:=$X y_pose:=$Y yaw:=$YAW robot_radius:=0.24 ${LAUNCH_ARGS:-} $*"
 export LOG=${LOG:-/tmp/coverage_livingroom.log}
 exec bash "$(dirname "${BASH_SOURCE[0]}")/run_coverage_regression.sh"

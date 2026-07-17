@@ -158,10 +158,15 @@ class CoverageRunner(Node):
         result = {
             'coverage': round(self.coverage, 4),          # final, uncapped
             'coverage_target': self.cov_target,
-            'efficiency_at_target': round(gate_eff, 4),   # judged at 90% crossing
+            'target_crossed': self.target_crossed,
+            # null when the target was never crossed — the gate then falls
+            # back to the final figure, and there is no crossing to time
+            'efficiency_at_target': (round(gate_eff, 4)
+                                     if self.target_crossed else None),
             'efficiency_final': round(self.efficiency, 4),  # incl. thoroughness tax
             'efficiency_target': self.eff_target,
-            'time_to_target_s': round(self.t_to_target, 1),
+            'time_to_target_s': (round(self.t_to_target, 1)
+                                 if self.target_crossed else None),
             'end_reason': reason,
             'sim_unstable': self.sim_unstable,
             'pass': bool(not self.sim_unstable
@@ -182,9 +187,10 @@ class CoverageRunner(Node):
                 'faithfully — use a native x86-64 Linux machine or CI runner. '
                 f'coverage={result["coverage"]:.4f} (informational only)')
             return 2
+        eat = result['efficiency_at_target']
         self.get_logger().info(
             f'COVERAGE_SUMMARY coverage={result["coverage"]:.4f} '
-            f'eff_at_target={result["efficiency_at_target"]:.4f} '
+            f'eff_at_target={f"{eat:.4f}" if eat is not None else "n/a"} '
             f'eff_final={result["efficiency_final"]:.4f} '
             f'reason={reason} pass={result["pass"]}')
         return 0 if result['pass'] else 1

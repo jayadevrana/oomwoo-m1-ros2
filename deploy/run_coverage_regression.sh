@@ -14,13 +14,18 @@ source /opt/ros/jazzy/setup.bash
 source /ros_ws/install/setup.bash
 [ -f /overlay_ws/install/setup.bash ] && source /overlay_ws/install/setup.bash
 [ -f "$HOME/oomwoo-dev/install/setup.bash" ] && source "$HOME/oomwoo-dev/install/setup.bash"
-export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+# any extra CLI args (e.g. `./run_coverage_regression.sh gui:=true`) are
+# forwarded to the launch, on top of whatever LAUNCH_ARGS carries
+LAUNCH_ARGS="${LAUNCH_ARGS:-} $*"
+# software GL is only forced headless; a gui:=true run keeps the host's GL
+case " $LAUNCH_ARGS " in *" gui:=true"*|*" gui:=True"*) ;;
+  *) export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe ;;
+esac
 # isolate DDS discovery so a co-running ROS graph can't interfere
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-77} ROS_LOCALHOST_ONLY=1
 
 RUNS=${RUNS:-1}
 LOG=${LOG:-/tmp/coverage_regression.log}
-LAUNCH_ARGS=${LAUNCH_ARGS:-}
 REPORT_DIR=$(mktemp -d /tmp/coverage_runs.XXXX)
 WORST=0
 
@@ -57,7 +62,9 @@ if [ "$RUNS" -gt 1 ]; then
 import json, glob, statistics as st, sys
 rs = [json.load(open(p)) for p in sorted(glob.glob(sys.argv[1] + '/run*.json'))]
 for k in ('coverage', 'efficiency_at_target', 'efficiency_final'):
-    v = [r.get(k, r.get('efficiency', 0.0)) for r in rs]
+    v = [x for x in (r.get(k, r.get('efficiency')) for r in rs) if x is not None]
+    if not v:
+        continue
     print(f"  {k:11}: min={min(v):.4f} max={max(v):.4f} mean={st.mean(v):.4f}"
           + (f" stdev={st.stdev(v):.4f}" if len(v) > 1 else ""))
 print(f"  passes     : {sum(r['pass'] for r in rs)}/{len(rs)}"
