@@ -39,6 +39,11 @@ install -m 0755 "$HERE/oomwoo_runtime.launch.py" "$WORKSPACE/pi_runtime/"
 install -m 0755 "$HERE/measure_baseline.py"      "$WORKSPACE/pi_runtime/"
 install -m 0755 "$HERE/measure_pi_baseline.sh"   "$WORKSPACE/pi_runtime/"
 install -m 0755 "$HERE/filter_bag.py"            "$WORKSPACE/pi_runtime/"
+# the baseline is unrunnable without these: the MCU serial helper (always-on
+# in every phase), the Nav2/map config the launch consumes, and the scan bag
+install -m 0755 "$HERE/oomwoo_sim_mcu_serial.py" "$WORKSPACE/pi_runtime/"
+cp -r "$HERE/config"   "$WORKSPACE/pi_runtime/"
+[ -d "$HERE/scan_bag" ] && cp -r "$HERE/scan_bag" "$WORKSPACE/pi_runtime/"
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
   echo "[m1] building behaviour packages (sim_support skipped — Gazebo-only)"

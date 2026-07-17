@@ -1,7 +1,19 @@
 #!/usr/bin/env python3
 # Copyright 2026 Jayadev Rana
-# SPDX-License-Identifier: Apache-2.0
-"""Autonomous kidnapped-robot relocalization regression runner (headless CLI).
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Autonomous kidnapped-robot relocalization regression runner (headless CLI).
 
 Runs N kidnap trials against the running relocalize stack and scores each against
 the acceptance metrics from the nav-localize RFC:
@@ -22,6 +34,8 @@ import math
 import sys
 import time
 
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -32,7 +46,6 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from std_srvs.srv import Trigger
 
 

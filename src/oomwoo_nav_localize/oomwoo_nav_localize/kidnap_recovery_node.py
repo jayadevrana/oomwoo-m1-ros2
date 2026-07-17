@@ -1,7 +1,19 @@
 #!/usr/bin/env python3
 # Copyright 2026 Jayadev Rana
-# SPDX-License-Identifier: Apache-2.0
-"""Kidnapped-robot detection and relocalization for OOMWOO.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Kidnapped-robot detection and relocalization for OOMWOO.
 
 Behavior: on a saved map with Nav2 + AMCL running, detect when localization
 confidence collapses (the robot was picked up and moved, or AMCL diverged),
@@ -24,9 +36,15 @@ source. The relocalize launch does not run a Nav2 goal concurrently; if it did,
 integrators must gate Nav2 on ~/recovering.
 """
 
-import math
 from enum import Enum
+import math
 from typing import Optional
+
+from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
+
+from nav_msgs.msg import OccupancyGrid
+
+import numpy as np
 
 import rclpy
 from rclpy.executors import ExternalShutdownException
@@ -38,17 +56,15 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-import numpy as np
-
-from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
-from nav_msgs.msg import OccupancyGrid
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Empty, Bool, Float32, String
+
+from std_msgs.msg import Bool, Empty, Float32, String
+
 from std_srvs.srv import Empty as EmptySrv
 
 
 def _pose_differs(a, b, d_m: float = 1.0, d_yaw: float = 1.0) -> bool:
-    """True when two (x, y, yaw) hypotheses are genuinely distinct."""
+    """Return True when two (x, y, yaw) hypotheses are genuinely distinct."""
     dyaw = abs(math.atan2(math.sin(a[2] - b[2]), math.cos(a[2] - b[2])))
     return math.hypot(a[0] - b[0], a[1] - b[1]) > d_m or dyaw > d_yaw
 
@@ -115,7 +131,6 @@ class KidnapRecovery(Node):
         self.declare_parameter('spin_speed', 0.9)         # rad/s in-place
         self.declare_parameter('drive_speed', 0.16)       # m/s while exploring
         self.declare_parameter('front_clear_m', 0.35)     # obstacle stop distance
-        self.declare_parameter('initial_spin_sec', 4.0)   # (legacy, unused)
         self.declare_parameter('explore_sec', 6.0)        # (legacy, unused)
         self.declare_parameter('settle_sec', 6.0)         # (legacy, unused)
         self.declare_parameter('match_score_ok', 0.75)    # accept scan-match above
@@ -130,7 +145,6 @@ class KidnapRecovery(Node):
         self.spin_speed = self.get_parameter('spin_speed').value
         self.drive_speed = self.get_parameter('drive_speed').value
         self.front_clear_m = self.get_parameter('front_clear_m').value
-        self.initial_spin_sec = self.get_parameter('initial_spin_sec').value
         self.explore_sec = self.get_parameter('explore_sec').value
         self.settle_sec = self.get_parameter('settle_sec').value
         self.match_score_ok = self.get_parameter('match_score_ok').value
@@ -179,7 +193,8 @@ class KidnapRecovery(Node):
     def _on_amcl(self, msg: PoseWithCovarianceStamped) -> None:
         cov = msg.pose.covariance
         # covariance is row-major 6x6: xx=0, yy=7, yaw yaw=35
-        self.last_trace = float(cov[0] + cov[7])  # xy only: yaw stays bimodal in near-symmetric rooms and would pin the full trace high
+        # xy only: yaw stays bimodal in near-symmetric rooms and would pin the full trace high
+        self.last_trace = float(cov[0] + cov[7])
 
     def _on_map(self, msg: OccupancyGrid) -> None:
         if self.map_grid is not None:
@@ -257,7 +272,18 @@ class KidnapRecovery(Node):
 
         elif self.state == State.FAILED:
             self.recovering_pub.publish(Bool(data=False))
-            self._stop()
+            # Do NOT keep spamming zero cmd_vel: with ~/recovering=False a
+            # downstream consumer (dock-cycle) is entitled to drive, and this
+            # node must not stomp its commands every tick. The single stop
+            # Twist was already sent on entry to FAILED. If AMCL reconverges
+            # on its own (covariance back under the OK gate), return to
+            # TRACKING instead of staying lost forever.
+            if self.last_trace is not None \
+                    and self.last_trace < self.ok_trace:
+                self.state = State.TRACKING
+                self.get_logger().info(
+                    'covariance recovered while FAILED -> back to TRACKING')
+                self._publish_status('LOCALIZED', True)
 
     def _do_recovery(self, now) -> None:
         # Recovery = global SCAN-MATCH relocalization:
@@ -337,9 +363,12 @@ class KidnapRecovery(Node):
     RANGE_TOL = 0.15    # m, beam agreement tolerance
 
     def _build_range_table(self) -> None:
-        """Raycast the map once into expected ranges for every candidate free
-        cell x NDIRS directions. One-time cost (~2-4 s); makes each subsequent
-        global match a pure table correlation."""
+        """
+        Raycast the map once into an expected-range table.
+
+        Covers every candidate free cell x NDIRS directions. One-time cost
+        (~2-4 s); makes each subsequent global match a pure table correlation.
+        """
         grid, res, ox, oy = self.map_grid, self.map_res, self.map_ox, self.map_oy
         h, w = grid.shape
         occupied = grid >= 50
@@ -378,12 +407,16 @@ class KidnapRecovery(Node):
             f'range table built: {P} candidates x {self.NDIRS} directions')
 
     def _scan_match(self, scan) -> tuple:
-        """Correlative global localization: compare the measured 360-deg scan
-        against the precomputed expected-range table over all candidate poses
-        and yaw bins (yaw = circular shift of the table). Score = fraction of
-        directions whose measured range agrees within RANGE_TOL.
+        """
+        Run correlative global localization on the measured scan.
+
+        Compare the measured 360-deg scan against the precomputed
+        expected-range table over all candidate poses and yaw bins (yaw =
+        circular shift of the table). Score = fraction of directions whose
+        measured range agrees within RANGE_TOL.
         Returns ((x, y, yaw), score); score 0.0 when the best match is
-        ambiguous (a distinct pose scores nearly as well)."""
+        ambiguous (a distinct pose scores nearly as well).
+        """
         if self.rt_table is None:
             self._build_range_table()
         # bin the measured scan into the table's NDIRS absolute bearings

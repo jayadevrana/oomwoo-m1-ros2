@@ -1,7 +1,19 @@
 #!/usr/bin/env python3
 # Copyright 2026 Jayadev Rana
-# SPDX-License-Identifier: Apache-2.0
-"""Teleport ("kidnap") the robot in Gazebo for relocalization testing.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Teleport ("kidnap") the robot in Gazebo for relocalization testing.
 
 Exposes a ``~/kidnap`` (std_srvs/Trigger) service. On each call it picks a random
 reachable free pose on the map (at least ``min_jump`` from the current true
@@ -19,7 +31,10 @@ import random
 import subprocess
 from typing import Optional
 
+from geometry_msgs.msg import PoseStamped
+
 import numpy as np
+
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -30,8 +45,8 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Empty
+
 from std_srvs.srv import Trigger
 
 FREE = 0
@@ -51,7 +66,8 @@ class KidnapInjector(Node):
         self.declare_parameter('robot_model_name', 'oomwoo_one')
         self.declare_parameter('world_name', 'default')
         self.declare_parameter('min_jump', 1.5)      # m, min teleport distance
-        self.declare_parameter('wall_clearance', 0.50)  # m from obstacles (robot center; body radius 0.175 + 3D-mesh overhang margin)
+        # m from obstacles (robot center; body radius 0.175 + 3D-mesh overhang margin)
+        self.declare_parameter('wall_clearance', 0.50)
         self.declare_parameter('spawn_z', 0.06)
         self.declare_parameter('seed', 42)
 

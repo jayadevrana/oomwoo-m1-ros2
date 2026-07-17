@@ -81,6 +81,11 @@ bash /ros_ws/src/oomwoo-m1/deploy/run_reloc_regression.sh
 bash /ros_ws/src/oomwoo-m1/deploy/run_coverage_livingroom.sh
 ```
 
+One caveat on the third script: `run_coverage_livingroom.sh` currently exits
+**1**, because its measured 89.3 % coverage sits below the 90 % gate the runner
+always enforces — an honest number for that tight room (expected on this world),
+not a regression failure.
+
 No display needed — Gazebo runs with `--headless-rendering`, so this drops
 straight into CI. To watch the identical sim with the Gazebo GUI, add
 `gui:=true` to any launch **or to any of the three run scripts**
@@ -124,7 +129,7 @@ instead of drifting near the 30 s limit.
 
 ## Config worth knowing
 
-| Node | Param | Default | Meaning |
+| Node | Param | Regression value | Meaning |
 |---|---|---|---|
 | coverage_planner | `cleaning_radius` | 0.20 m | half the cleaning swath (see assumption below) |
 | coverage_planner | `robot_radius` | 0.30 m | wall clearance the planner keeps (planning only — never used by the meter) |
@@ -133,6 +138,15 @@ instead of drifting near the 30 s limit.
 | coverage_meter | `edge_margin` | 0.15 m | wall strip left to floor-care |
 | kidnap_recovery | `match_score_ok` | 0.75 | scan-match confidence to accept |
 | kidnap_recovery | `recovery_timeout_sec` | 30 | give up (→ dock-cycle) after this |
+
+The column is what `coverage_regression.launch.py` pins — the values every
+shipped result was measured with — **not** always the node's own
+`declare_parameter` default. Where they differ, a standalone `ros2 run` gives
+you the node default instead: the planner declares `cleaning_radius` 0.16,
+`robot_radius` 0.17 and `row_overlap` 0.10 (the launch pins 0.05); the meter
+declares `robot_radius` 0.175 (the launch pins 0.1745). The other rows match
+their node defaults. (`run_coverage_livingroom.sh` additionally overrides the
+planner `robot_radius` to 0.24.)
 
 **Explicit assumption — the cleaning swath.** `cleaning_radius = 0.20` means a
 0.40 m swath on a 0.349 m-wide robot: wider than the body. That is only true if
@@ -199,6 +213,30 @@ constantly wipes Nav2's TF buffers and the planner never even activates. On a
 real x86-64 host the problem is gone. This is your CI target anyway, so it's not a
 practical limitation, but it'll waste your afternoon if you try it on an M-series
 Mac.
+
+## Known limitations (stated, not hidden)
+
+- **Coverage feedback is external.** The planner consumes coverage feedback
+  from outside itself — in sim that's the ground-truth meter, i.e. the grader.
+  On a real robot it needs a belief-based estimator (stamping the cleaning disk
+  along AMCL/TF) which doesn't exist yet. Without the feedback the sweep still
+  runs to completion, but waypoint skipping, gap-fill and `stop_at_target` are
+  inert and the node warns. So the sim pass certifies the sweep + harness, not
+  a standalone onboard coverage estimator.
+- **No cmd_vel arbitration.** The coverage planner (wedge escape), kidnap
+  recovery, and Nav2 all publish to the same `/cmd_vel`; nothing arbitrates
+  between them if they run concurrently on a robot, and the sim regressions
+  never run them concurrently. A twist mux is future integration work.
+- **Wedge escape reverses blind.** It backs up ~0.3 m open-loop with no rear
+  sensing (the vacuum's bumpers face forward). It fires only after 2
+  consecutive Nav2 aborts, in practice inside inflated-lethal pockets.
+- **Scan-match relocalization can be fooled by symmetry.** In a highly
+  symmetric room a mirrored/shifted pose can score as well as the true one; the
+  AMCL confirmation window catches most such cases, not all. Measured 10/10 in
+  `test_room` — no claim beyond that world.
+- **CPU baseline is a window mean.** `measure_baseline.py` reports mean CPU
+  over the sampling window; a process that exits mid-window contributes only
+  its completed ticks, so a churny graph would understate load.
 
 ---
 

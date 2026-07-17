@@ -1,7 +1,19 @@
 #!/usr/bin/env python3
 # Copyright 2026 Jayadev Rana
-# SPDX-License-Identifier: Apache-2.0
-"""Measure true coverage % and path efficiency for the coverage behavior.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Measure true coverage % and path efficiency for the coverage behavior.
 
 Coverage and efficiency are computed from the robot's *ground-truth* pose
 (see ground_truth_node), never from the planner's own belief:
@@ -24,7 +36,12 @@ Emits a machine-parseable ``COVERAGE_REPORT ...`` log line every second.
 import math
 from typing import Optional
 
+from geometry_msgs.msg import PoseStamped
+
+from nav_msgs.msg import OccupancyGrid
+
 import numpy as np
+
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -35,8 +52,6 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-from geometry_msgs.msg import PoseStamped
-from nav_msgs.msg import OccupancyGrid
 from std_msgs.msg import Bool, Float32
 
 FREE = 0
@@ -62,13 +77,11 @@ class CoverageMeter(Node):
         # near this bound is a teleport — a symptom of an unstable simulation
         # (seen on Docker-under-WSL2 / emulated hosts), not of driving.
         self.declare_parameter('max_pose_step_m', 0.5)
-        self.declare_parameter('max_pose_jumps', 3)
         self.cleaning_radius = self.get_parameter('cleaning_radius').value
         self.robot_radius = self.get_parameter('robot_radius').value
         self.edge_margin = self.get_parameter('edge_margin').value
         self.coverage_target = self.get_parameter('coverage_target').value
         self.max_pose_step = self.get_parameter('max_pose_step_m').value
-        self.max_pose_jumps = self.get_parameter('max_pose_jumps').value
         self.pose_jumps = 0
         self.sim_unstable = False
 
@@ -169,8 +182,8 @@ class CoverageMeter(Node):
             self.t_start = self.get_clock().now()
 
         rad = max(1, int(round(self.cleaning_radius / res)))
-        _stamp_disk(self.covered, self.reachable, cx, cy, rad)
 
+        jumped = False
         if self.job_active:
             xy = (msg.pose.position.x, msg.pose.position.y)
             if self.last_xy is not None:
@@ -179,26 +192,34 @@ class CoverageMeter(Node):
                 if step > self.max_pose_step:
                     # A teleport, not driving. Summing it would destroy the
                     # path-length denominator (observed: a glitching pose fed
-                    # 1.5e6 m of "path" -> efficiency 0.0001). Count it, skip
-                    # it, and past the threshold declare the measurement
-                    # invalid instead of reporting a confident wrong number.
+                    # 1.5e6 m of "path" -> efficiency 0.0001) — and stamping
+                    # the landing would mark floor as cleaned that was never
+                    # driven. During an ACTIVE job there is no legitimate
+                    # teleport, so a single one already invalidates the
+                    # measurement: excusing "just one or two" would let a
+                    # teleport skip real path and inflate efficiency.
+                    jumped = True
                     self.pose_jumps += 1
                     self.get_logger().warning(
                         f'ground-truth pose jumped {step:.2f} m between '
                         f'samples (> {self.max_pose_step} m) — teleport '
-                        f'#{self.pose_jumps}; excluded from path length')
-                    if (not self.sim_unstable
-                            and self.pose_jumps >= self.max_pose_jumps):
+                        f'#{self.pose_jumps}; excluded from path length '
+                        'and coverage stamping')
+                    if not self.sim_unstable:
                         self.sim_unstable = True
                         self.get_logger().error(
-                            'SIM UNSTABLE: ground-truth pose is teleporting. '
-                            'Efficiency cannot be measured in this '
-                            'environment — re-run on a native x86-64 Linux '
-                            'host (Docker on Windows/WSL2 and emulated hosts '
-                            'destabilize Gazebo physics).')
+                            'SIM UNSTABLE: ground-truth pose teleported '
+                            'during an active cleaning job. Coverage and '
+                            'efficiency cannot be measured — re-run on a '
+                            'native x86-64 Linux host (Docker on '
+                            'Windows/WSL2 and emulated hosts destabilize '
+                            'Gazebo physics).')
                 else:
                     self.path_len += step
             self.last_xy = xy
+
+        if not jumped:
+            _stamp_disk(self.covered, self.reachable, cx, cy, rad)
 
     # ------------------------------------------------------------ report
     def _ratio(self) -> float:

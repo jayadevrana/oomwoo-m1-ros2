@@ -62,7 +62,8 @@ if [ "$RUNS" -gt 1 ]; then
 import json, glob, statistics as st, sys
 rs = [json.load(open(p)) for p in sorted(glob.glob(sys.argv[1] + '/run*.json'))]
 for k in ('success_rate', 'mean_reloc_time_s'):
-    v = [r[k] for r in rs if k in r]
+    # a 0-success suite reports mean_reloc_time_s as null — drop it, don't crash
+    v = [r[k] for r in rs if r.get(k) is not None]
     if v:
         print(f"  {k:18}: min={min(v):.3f} max={max(v):.3f} mean={st.mean(v):.3f}"
               + (f" stdev={st.stdev(v):.3f}" if len(v) > 1 else ""))

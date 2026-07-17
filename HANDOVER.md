@@ -17,6 +17,10 @@ Relocalization:  10/10   (target 90%)     PASS
   accuracy:      <= 0.12m every trial  (target 2m)
 ```
 
+(The coverage reports backing the first block are banked in `deploy/results/`;
+the reloc report JSON is not yet banked there — regenerate it with
+`RUNS=1 deploy/run_reloc_regression.sh`.)
+
 ## What's here
 
 ```

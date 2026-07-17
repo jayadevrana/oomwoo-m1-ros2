@@ -15,8 +15,9 @@ regression that verifies the acceptance metrics.
 
 ## What it does
 
-- Brings up the saved `living_room` map + AMCL headless (a light stack — no Nav2
-  nav servers needed for the spin/explore recovery).
+- Brings up the saved `test_room` map (the default regression world) + AMCL
+  headless (a light stack — no Nav2 nav servers needed for the spin/explore
+  recovery).
 - **Global initial localization** at startup (AMCL, no pose given), tracks pose
   during motion, and exposes a confidence signal (covariance trace).
 - **Kidnap detection**: enters recovery on a covariance collapse or an external

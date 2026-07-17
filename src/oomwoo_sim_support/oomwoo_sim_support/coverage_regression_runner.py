@@ -1,7 +1,19 @@
 #!/usr/bin/env python3
 # Copyright 2026 Jayadev Rana
-# SPDX-License-Identifier: Apache-2.0
-"""Autonomous coverage-cleaning regression runner (headless CLI).
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Autonomous coverage-cleaning regression runner (headless CLI).
 
 Observes the coverage_meter while the coverage_planner sweeps the map, then
 scores the run against the cleaning-jobs acceptance metrics:
@@ -44,6 +56,11 @@ class CoverageRunner(Node):
         self.declare_parameter('efficiency_target', 0.80)
         # generous: run-to-completion sweeps outlast the old stop-at-90% runs
         self.declare_parameter('max_sim_time_s', 3600.0)
+        # wall-clock backstops: with use_sim_time, every other exit condition
+        # depends on /clock — a sim that never starts (or freezes mid-run)
+        # would otherwise hang this "CI-friendly" runner forever.
+        self.declare_parameter('max_wall_time_s', 2700.0)
+        self.declare_parameter('clock_dead_wall_s', 120.0)
         self.declare_parameter('plateau_s', 180.0)
         self.declare_parameter('plateau_eps', 0.005)
         self.declare_parameter('report_path', '/root/coverage_report.json')
@@ -51,6 +68,8 @@ class CoverageRunner(Node):
         self.cov_target = self.get_parameter('coverage_target').value
         self.eff_target = self.get_parameter('efficiency_target').value
         self.max_t = self.get_parameter('max_sim_time_s').value
+        self.max_wall = self.get_parameter('max_wall_time_s').value
+        self.clock_dead_s = self.get_parameter('clock_dead_wall_s').value
         self.plateau_s = self.get_parameter('plateau_s').value
         self.plateau_eps = self.get_parameter('plateau_eps').value
         self.report_path = self.get_parameter('report_path').value
@@ -112,9 +131,26 @@ class CoverageRunner(Node):
         self.last_gain_sim_t = start_sim
 
         reason = 'max_time'
+        wall_start = time.time()
+        last_sim = self._sim_now()
+        last_sim_advance_wall = wall_start
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.5)
             sim_t = self._sim_now() - start_sim
+            # wall-clock backstops: a dead/frozen sim clock stops every
+            # sim-time exit condition, so bound the run in real time too
+            now_wall = time.time()
+            if self._sim_now() > last_sim:
+                last_sim = self._sim_now()
+                last_sim_advance_wall = now_wall
+            elif now_wall - last_sim_advance_wall >= self.clock_dead_s:
+                reason = 'clock_dead'
+                self.sim_unstable = True
+                break
+            if now_wall - wall_start >= self.max_wall:
+                reason = 'wall_timeout'
+                self.sim_unstable = True
+                break
             if self.sim_unstable:
                 # no point measuring further — the numbers are already invalid
                 break
@@ -150,7 +186,7 @@ class CoverageRunner(Node):
                 reason = 'max_time'
                 break
 
-        if self.sim_unstable:
+        if self.sim_unstable and reason not in ('clock_dead', 'wall_timeout'):
             reason = 'sim_unstable'
         # gate efficiency = at the target crossing (the contract condition);
         # if the target was never crossed the final value is all there is.

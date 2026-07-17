@@ -14,6 +14,13 @@ Two checks, exit 1 on any finding — wire it into CI:
    mirror bug: code that works only because some other package dragged the
    dependency in.
 
+Known false-pass classes (this lint is narrower than real rosdep resolution):
+check 1 counts a rosdistro repo as "released" even when it has no versioned
+release section (source/doc-only repos), so a depend on such a repo name passes
+here but still fails `rosdep install` on a clean machine; and the depend regex
+never scans <buildtool_depend>/<build_export_depend> tags, which `rosdep
+install` does resolve.
+
 Usage:  python3 tools/check_rosdeps.py [--distro jazzy] [src_dir]
 Needs network on first run (fetches the rosdep db + distro index to /tmp).
 """
@@ -35,7 +42,8 @@ IGNORE_IMPORTS = {
 }
 # import name -> the dependency key that provides it
 IMPORT_TO_KEY = {'numpy': 'python3-numpy', 'yaml': 'python3-yaml',
-                 'PIL': 'python3-pil', 'scipy': 'python3-scipy'}
+                 'PIL': 'python3-pil', 'scipy': 'python3-scipy',
+                 'pytest': 'python3-pytest'}
 
 
 def fetch(url, dest):

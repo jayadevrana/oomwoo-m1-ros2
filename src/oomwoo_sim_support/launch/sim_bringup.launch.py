@@ -1,6 +1,18 @@
 # Copyright 2026 Jayadev Rana
-# SPDX-License-Identifier: Apache-2.0
-"""Headless OOMWOO simulation bringup shared by the regression harnesses.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Headless OOMWOO simulation bringup shared by the regression harnesses.
 
 Brings up, fully headless (no GUI, offscreen rendering — CI/Docker friendly):
   * Gazebo server (living_room world) with software rendering
@@ -19,6 +31,7 @@ nodes additionally wait on their own inputs, so exact timing is not critical.
 import os
 
 from ament_index_python.packages import get_package_share_directory
+
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -29,6 +42,7 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import Command, LaunchConfiguration
+
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -222,7 +236,12 @@ def generate_launch_description() -> LaunchDescription:
 
     ground_truth = Node(
         package='oomwoo_sim_support', executable='ground_truth', output='screen',
-        parameters=[{'spawn_x': x0, 'spawn_y': y0, 'spawn_yaw': yaw0,
+        # float-coerced like the AMCL seed below: a whole-number override
+        # (x_pose:=2, YAW=0) would otherwise YAML-parse as int and crash the
+        # statically-double-typed node parameters at startup
+        parameters=[{'spawn_x': ParameterValue(x0, value_type=float),
+                     'spawn_y': ParameterValue(y0, value_type=float),
+                     'spawn_yaw': ParameterValue(yaw0, value_type=float),
                      'use_sim_time': True}],
         remappings=[('odom', '/odom'), ('~/pose', '/ground_truth/pose')])
 

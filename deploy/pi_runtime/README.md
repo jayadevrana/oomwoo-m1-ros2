@@ -154,8 +154,10 @@ baseline. Two calls it got right and one wrong, stated plainly:
   337 MB. Conclusion unchanged, and stronger.
 
 Reproduce on the board: `BAG=$PWD/scan_bag bash measure_pi_baseline.sh` — it
-writes the `baseline_report.json` / per-phase JSON in `results/` these tables
-come from.
+writes `baseline_report.json` and the per-phase JSONs to `/tmp/pi_baseline`
+(override with `OUT=`); copy those JSONs into `results/` to bank them. The
+committed `results/` files are the banked run these tables come from (see
+`results/PROVENANCE.md`).
 
 ### Pi setup note (reproducing from a fresh Ubuntu Server image)
 

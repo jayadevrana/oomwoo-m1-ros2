@@ -1,7 +1,19 @@
 #!/usr/bin/env python3
 # Copyright 2026 Jayadev Rana
-# SPDX-License-Identifier: Apache-2.0
-"""Boustrophedon coverage planner for the OOMWOO robot vacuum.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Boustrophedon coverage planner for the OOMWOO robot vacuum.
 
 Behavior "regular / auto cleaning": given a saved occupancy map, plan a
 back-and-forth (boustrophedon) sweep that covers the entire reachable floor,
@@ -9,25 +21,38 @@ respecting keep-out zones, and execute it through Nav2's
 ``NavigateThroughPoses`` action. Nav2 handles obstacle-aware routing between the
 sweep waypoints; this node owns the *what and where to clean* decision.
 
-Interfaces (per docs/SOFTWARE_INTERFACES.md):
-  subscribes  /map              nav_msgs/OccupancyGrid   (transient_local)
-  subscribes  /keepout_filter_mask nav_msgs/OccupancyGrid (optional, latched)
-  action clnt /navigate_through_poses nav2_msgs/NavigateThroughPoses
-  publishes   ~/coverage_grid   nav_msgs/OccupancyGrid   (covered cells, viz)
-  publishes   ~/coverage_ratio  std_msgs/Float32         (0..1, monitoring)
+Interfaces (as actually wired):
+  subscribes  map               nav_msgs/OccupancyGrid   (transient_local)
+  subscribes  keepout_filter_mask nav_msgs/OccupancyGrid (optional, latched)
+  subscribes  coverage_ratio    std_msgs/Float32   (EXTERNAL coverage estimate)
+  subscribes  covered_grid      nav_msgs/OccupancyGrid  (EXTERNAL covered cells)
+  action clnt navigate_to_pose  nav2_msgs/NavigateToPose (one goal per waypoint)
+  publishes   ~/cleaning_active std_msgs/Bool           (latched; False = done)
 
-Coverage is *measured*, not assumed: a disk of ``cleaning_radius`` swept along
-the robot's actual pose (map->base_footprint from TF) marks free cells covered.
-This is the same honest metric the regression harness asserts against.
+Coverage feedback is EXTERNAL by design and must be stated plainly: this node
+does not estimate its own coverage. In the sim harness the feedback comes from
+the ground-truth coverage_meter; on a real robot it must come from a
+belief-based estimator (AMCL pose + cleaning-disk stamping) that does not
+exist yet. Without that input the sweep still runs and completes every row,
+but waypoint skipping, gap-fill and stop_at_target are inert (the node warns
+about this at startup). Consequence for reading the regression numbers: the
+planner under test consumes the same grid the grader scores with, so the
+sim pass certifies the sweep + the harness loop, not a standalone estimator.
 """
 
-import math
 from typing import List, Optional, Tuple
 
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
+
+from nav2_msgs.action import NavigateToPose
+
+from nav_msgs.msg import OccupancyGrid
+
 import numpy as np
+
 import rclpy
-from rclpy.executors import ExternalShutdownException
 from rclpy.action import ActionClient
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import (
     QoSDurabilityPolicy,
@@ -36,9 +61,6 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
-from nav_msgs.msg import OccupancyGrid
-from nav2_msgs.action import NavigateToPose
 from std_msgs.msg import Bool, Float32
 
 # OccupancyGrid cell conventions
@@ -49,7 +71,7 @@ OCC_THRESH = 50
 
 
 def latched_qos() -> QoSProfile:
-    """QoS matching a transient-local map publisher (map_server / SLAM)."""
+    """Return QoS matching a transient-local map publisher (map_server / SLAM)."""
     return QoSProfile(
         depth=1,
         history=QoSHistoryPolicy.KEEP_LAST,
@@ -195,14 +217,26 @@ class CoveragePlanner(Node):
         self.total_free_cells = int(free.sum())
 
     def _on_ratio(self, msg: Float32) -> None:
+        if not getattr(self, 'ratio_seen', False):
+            self.ratio_seen = True
         self.ext_ratio = float(msg.data)
+
+    def _warn_if_no_feedback(self) -> None:
+        """Warn once if the sweep started without external coverage feedback."""
+        if self.plan_started and not getattr(self, 'ratio_seen', False) \
+                and not getattr(self, 'feedback_warned', False):
+            self.feedback_warned = True
+            self.get_logger().warn(
+                'no coverage feedback on "coverage_ratio" — waypoint skipping, '
+                'gap-fill and stop_at_target are inert this run. In sim, wire '
+                'the coverage_meter; on a robot, wire a coverage estimator.')
 
     def _on_covered(self, msg: OccupancyGrid) -> None:
         self.covered_grid = np.asarray(msg.data, dtype=np.int8).reshape(
             msg.info.height, msg.info.width)
 
     def _covered_at(self, pose) -> bool:
-        """True when the disk around this waypoint is already mostly clean."""
+        """Return True when the disk around this waypoint is already mostly clean."""
         if self.covered_grid is None or self.map_msg is None:
             return False
         info = self.map_msg.info
@@ -223,7 +257,8 @@ class CoveragePlanner(Node):
 
     # ------------------------------------------------------------- planning
     def _plan_waypoints(self) -> List[PoseStamped]:
-        """Boustrophedon sweep over the robot's *reachable* inflated-free area.
+        """
+        Boustrophedon sweep over the robot's *reachable* inflated-free area.
 
         Waypoints are restricted to the free-space connected component that
         contains the robot (flood fill), so the planner is never handed a pose
@@ -244,6 +279,11 @@ class CoveragePlanner(Node):
             self.get_logger().warn('robot not on reachable free space')
             return []
         reachable = _flood_fill(self.free_mask, seed)
+        # keep for gap-fill: its targets must obey the same reachability
+        # invariant as the sweep, or disconnected free islands (e.g. the
+        # outside-the-walls region some maps load as free) get re-targeted
+        # forever, each aborting and pumping the wedge-escape skip counter.
+        self.reachable_mask = reachable
 
         swath = 2.0 * self.cleaning_radius
         step_m = max(res, swath * (1.0 - self.row_overlap))
@@ -370,8 +410,11 @@ class CoveragePlanner(Node):
             self._on_goal_response)
 
     def _gapfill_waypoints(self):
-        """Waypoints at the still-uncovered drivable cells, nearest-neighbour
-        ordered from the robot so the fill path is short."""
+        """
+        Return waypoints at the still-uncovered drivable cells.
+
+        Nearest-neighbour ordered from the robot so the fill path is short.
+        """
         if self.covered_grid is None or self.free_mask is None:
             return []
         info = self.map_msg.info
@@ -379,7 +422,12 @@ class CoveragePlanner(Node):
         cov = self.covered_grid >= 100
         if cov.shape != self.free_mask.shape:
             return []
-        uncovered = self.free_mask & ~cov          # drivable but not cleaned
+        # same reachability invariant as the main sweep: only target cells in
+        # the robot's connected component, never disconnected free islands
+        base = getattr(self, 'reachable_mask', None)
+        if base is None or base.shape != self.free_mask.shape:
+            base = self.free_mask
+        uncovered = base & ~cov                    # reachable but not cleaned
         ys, xs = np.where(uncovered)
         if ys.size == 0:
             return []
@@ -415,6 +463,12 @@ class CoveragePlanner(Node):
         if not handle.accepted:
             self.awaiting = False       # Nav2 busy/not-ready -> retry same wp
             self.next_send = self.get_clock().now()
+            return
+        if getattr(self, 'cancel_on_accept', False):
+            # stop_at_target fired while this goal was in flight: kill it now
+            self.cancel_on_accept = False
+            handle.cancel_goal_async()
+            self.awaiting = False
             return
         self.goal_handle = handle
         handle.get_result_async().add_done_callback(self._on_result)
@@ -457,6 +511,7 @@ class CoveragePlanner(Node):
         if self.map_msg is None or self.total_free_cells == 0:
             return
         ratio = self.ext_ratio
+        self._warn_if_no_feedback()
 
         if self.stop_at_target and ratio >= self.coverage_target \
                 and not self.finished:
@@ -465,9 +520,18 @@ class CoveragePlanner(Node):
                 f'({ratio:.1%}); stopping (stop_at_target=true)')
             self.finished = True
             self.active_pub.publish(Bool(data=False))
+            # never leave motion running: the target can be crossed mid
+            # wedge-escape (open-loop reverse on /cmd_vel) — send an explicit
+            # zero Twist and clear the escape window, else the last command
+            # (-0.12 m/s) stands with nothing downstream to zero it.
+            self.cmd_pub.publish(Twist())
+            self.escape_until = None
             if self.goal_handle is not None:
                 self.goal_handle.cancel_goal_async()
                 self.goal_handle = None
+            elif self.awaiting:
+                # goal sent but not yet accepted: cancel it on acceptance
+                self.cancel_on_accept = True
             return
         if self.finished:
             return

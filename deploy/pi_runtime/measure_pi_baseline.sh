@@ -32,6 +32,15 @@ SETTLE=${SETTLE:-18}
 WINDOW=${WINDOW:-25}
 mkdir -p "$OUT"
 
+# Fail LOUDLY on missing prerequisites instead of measuring a half-dead graph:
+# a silently-absent MCU serial or config yields numbers that look plausible
+# but measure the wrong thing.
+for f in "$LAUNCH" "$MEASURE" "$SERIAL" "$HERE/config/nav2_params.yaml" \
+         "$HERE/config/test_room.yaml"; do
+  [ -e "$f" ] || { echo "FATAL: missing prerequisite: $f" >&2; exit 3; }
+done
+[ -d "$BAG" ] || { echo "FATAL: scan bag not found at $BAG (set BAG=)" >&2; exit 3; }
+
 # the simulated MCU serial link runs across every phase (it's always-on onboard)
 python3 "$SERIAL" --link /tmp/oomwoo-mcu-serial >/tmp/mcu.log 2>&1 &
 MCU=$!
@@ -41,7 +50,12 @@ trap 'kill $MCU 2>/dev/null; pkill -f oomwoo_runtime 2>/dev/null; pkill -f "bag 
 # per-phase launch spawns, which must be fully reaped before the next phase
 # measures (a bare `kill -INT` on the ros2-launch parent leaves children like
 # slam_toolbox alive, which then leak into the next phase's totals).
-NODES='oomwoo_runtime|ros2 launch|slam_toolbox|amcl|controller_server|planner_server|bt_navigator|behavior_server|lifecycle_manager|map_server|robot_state_publisher|coverage_planner|kidnap_recovery|waypoint_follower|velocity_smoother|collision_monitor|component_container|ros2 bag|rosbag2'
+# NB: the first alternative is anchored to the LAUNCH FILE, not the bare
+# string 'oomwoo_runtime' — the documented install path is
+# ~/oomwoo_runtime_ws/..., so an unanchored match would hit this script's own
+# shell (pkill -f matches whole cmdlines incl. paths; on Linux pgrep/pkill
+# exclude only themselves, not ancestors) and SIGKILL the harness mid-run.
+NODES='oomwoo_runtime\.launch|ros2 launch|slam_toolbox|amcl|controller_server|planner_server|bt_navigator|behavior_server|lifecycle_manager|map_server|robot_state_publisher|coverage_planner|kidnap_recovery|waypoint_follower|velocity_smoother|collision_monitor|component_container|ros2 bag|rosbag2'
 
 reap() {
   # SIGINT the graph + bag, wait for a clean exit, then SIGKILL any straggler.

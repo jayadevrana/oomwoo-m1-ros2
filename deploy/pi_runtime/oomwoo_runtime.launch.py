@@ -26,8 +26,14 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def _setup(context, *_):
     mode = LaunchConfiguration('mode').perform(context)
+    if mode not in ('idle', 'slam', 'nav'):
+        # fail LOUDLY: a typo like mode:=navigation would otherwise silently
+        # bring up the bare idle graph and the baseline would measure nothing
+        raise ValueError(f'mode must be idle|slam|nav, got {mode!r}')
     robot_model = LaunchConfiguration('robot_model').perform(context) or 'oomwoo_one'
-    use_sim_time = LaunchConfiguration('use_sim_time').perform(context) == 'true'
+    # accept true/True/1 — '== "true"' silently made use_sim_time:=True False
+    use_sim_time = LaunchConfiguration(
+        'use_sim_time').perform(context).lower() in ('true', '1')
     # config lives beside this launch file so the onboard runtime has NO
     # dependency on oomwoo_sim_support (which pulls Gazebo and isn't installed
     # on the robot).
