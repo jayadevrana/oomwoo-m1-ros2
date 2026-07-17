@@ -88,7 +88,7 @@ def generate_launch_description() -> LaunchDescription:
         if model in ('', 'config'):
             # kaiaai convention: read robot.model from ~/.kaiaai.yaml
             try:
-                from kaiaai import config
+                from kaiaai import config  # dep-optional: guarded, falls back
                 model = config.get_var('robot.model')
             except Exception:
                 model = 'oomwoo_one'

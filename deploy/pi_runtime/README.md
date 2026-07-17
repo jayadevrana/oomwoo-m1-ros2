@@ -46,6 +46,22 @@ fixed here and worth upstreaming:
 
 The `pi4_4gb_runtime_plan.md` and package selection otherwise check out.
 
+**Scope of that validation — and a gap it missed.** What was actually
+exercised end-to-end: apt install of the ROS runtime, cloning the runtime
+repos, `colcon build` of all of them, the runtime graph reaching active, and
+the baseline measurement. What was NOT validated: the installer's **rosdep
+step on a clean machine** — the Pi/cloud runs wrapped the installer in a
+retry loop that tolerated non-fatal failures, so a `rosdep install` failure
+was survivable and went unnoticed (`colcon build` doesn't need rosdep's
+runtime keys, which is exactly why the gap is invisible at build time). The
+client's review caught it: unresolvable rosdep keys crash the installer on a
+clean machine, and this repo's own packages contributed one —
+`<depend>numpy</depend>` is a pip name, not a rosdep key (`python3-numpy` is).
+Fixed here: keys corrected and missing declarations added in all three
+`package.xml`s, the `|| true` masks removed from every rosdep invocation
+(failures are fatal now), and `tools/check_rosdeps.py` lints both directions
+(declared→resolvable, imported→declared) in CI on every push.
+
 ## Measuring the baseline (no robot attached)
 
 A robot isn't wired up during the baseline, so a recorded `scan + odom + tf` bag

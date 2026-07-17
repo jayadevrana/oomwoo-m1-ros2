@@ -36,7 +36,9 @@ RUN chmod +x /tmp/_get_pkgs.sh && /tmp/_get_pkgs.sh
 
 RUN . /opt/ros/jazzy/setup.sh \
  && . /ros_ws/install/setup.sh \
- && rosdep install --from-paths src/oomwoo-m1 --ignore-src -y || true \
+# rosdep must FAIL the build if a key doesn't resolve — masking it is how a
+# bad dependency key ships. The base image has rosdep initialized already.
+ && rosdep install --from-paths src/oomwoo-m1 --ignore-src -y \
  && colcon build --symlink-install \
       --packages-select oomwoo_coverage oomwoo_nav_localize oomwoo_sim_support \
  && rm -rf log /tmp/local_src

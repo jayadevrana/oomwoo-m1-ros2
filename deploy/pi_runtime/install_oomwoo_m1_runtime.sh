@@ -44,8 +44,11 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
   echo "[m1] building behaviour packages (sim_support skipped — Gazebo-only)"
   . /opt/ros/jazzy/setup.bash
   cd "$WORKSPACE"
+  # rosdep failures are FATAL here — an `|| true` on this line is exactly how
+  # a bad dependency key ships silently. --skip-keys covers only the Gazebo
+  # packages that intentionally don't exist on the robot.
   rosdep install --from-paths src/oomwoo-m1 --ignore-src -y \
-    --skip-keys "ros_gz_sim ros_gz_bridge gz-sim8" || true
+    --skip-keys "ros_gz_sim ros_gz_bridge gz-sim8"
   colcon build --symlink-install \
     --packages-select oomwoo_coverage oomwoo_nav_localize
   rm -rf log/

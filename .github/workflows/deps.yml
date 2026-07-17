@@ -1,0 +1,12 @@
+name: dependency-lint
+on: [push, pull_request]
+jobs:
+  rosdep-keys:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pyyaml
+      # every declared package.xml key must resolve (jazzy pkg or rosdep key),
+      # and every third-party import must be declared — both directions of the
+      # bug class that shipped `<depend>numpy</depend>`.
+      - run: python3 tools/check_rosdeps.py
