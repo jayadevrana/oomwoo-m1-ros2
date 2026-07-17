@@ -56,7 +56,8 @@ was survivable and went unnoticed (`colcon build` doesn't need rosdep's
 runtime keys, which is exactly why the gap is invisible at build time). The
 client's review caught it: unresolvable rosdep keys crash the installer on a
 clean machine, and this repo's own packages contributed one —
-`<depend>numpy</depend>` is a pip name, not a rosdep key (`python3-numpy` is).
+`<exec_depend>numpy</exec_depend>` is a pip name, not a rosdep key
+(`python3-numpy` is).
 Fixed here: keys corrected and missing declarations added in all three
 `package.xml`s, the `|| true` masks removed from every rosdep invocation
 (failures are fatal now), and `tools/check_rosdeps.py` lints both directions
