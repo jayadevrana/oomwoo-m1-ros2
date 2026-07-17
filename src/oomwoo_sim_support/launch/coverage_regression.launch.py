@@ -49,10 +49,12 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument('x_pose', default_value='0.0'),
         DeclareLaunchArgument('y_pose', default_value='0.0'),
         DeclareLaunchArgument('yaw', default_value='0.0'),
-        # planning/serviceability clearance. 0.30 is roomy for the open
-        # test_room; drop toward the true inscribed radius (0.1745) in cluttered
-        # worlds so the sweep can go under furniture (e.g. between table legs).
-        DeclareLaunchArgument('robot_radius', default_value='0.30'),
+        # planning clearance ALIGNED WITH THE REAL MACHINE: true inscribed
+        # radius 0.1745 + 1 cm. A vacuum is meant to touch things (that's the
+        # bumper's job) — inflated clearance (the old 0.30/0.24) sealed off
+        # every gap under 2x the value, which is why under-furniture never
+        # happened. Contact/wedging risk is carried by the wedge-escape path.
+        DeclareLaunchArgument('robot_radius', default_value='0.18'),
         # pinned so the regression gate is reproducible on any machine;
         # override robot_model:=<pkg> to run the suite against another vacuum.
         DeclareLaunchArgument('robot_model', default_value='oomwoo_one'),

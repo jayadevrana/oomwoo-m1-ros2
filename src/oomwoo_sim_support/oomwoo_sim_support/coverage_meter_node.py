@@ -93,6 +93,7 @@ class CoverageMeter(Node):
 
         self.last_xy: Optional[tuple] = None
         self.path_len = 0.0
+        self.revisit_len = 0.0
         self.t_start: Optional[rclpy.time.Time] = None
         self.t_target: Optional[float] = None         # sim sec to reach target
         self.target_hit = False
@@ -107,6 +108,8 @@ class CoverageMeter(Node):
             Bool, 'cleaning_active', self._on_active, latched_qos())
         self.ratio_pub = self.create_publisher(Float32, '~/ratio', 10)
         self.eff_pub = self.create_publisher(Float32, '~/efficiency', 10)
+        self.revisit_pub = self.create_publisher(
+            Float32, '~/revisit_ratio', 10)
         self.unstable_pub = self.create_publisher(
             Bool, '~/sim_unstable', latched_qos())
         self.covered_pub = self.create_publisher(
@@ -165,6 +168,7 @@ class CoverageMeter(Node):
         if msg.data and not self.job_active:
             self.job_active = True
             self.path_len = 0.0
+            self.revisit_len = 0.0
             self.last_xy = None
             self.t_start = self.get_clock().now()
             self.get_logger().info('cleaning job active: path/time accounting reset')
@@ -216,10 +220,30 @@ class CoverageMeter(Node):
                             'Gazebo physics).')
                 else:
                     self.path_len += step
+                    self._pending_step = step
             self.last_xy = xy
 
         if not jumped:
-            _stamp_disk(self.covered, self.reachable, cx, cy, rad)
+            new_cells = _stamp_disk(self.covered, self.reachable, cx, cy, rad)
+            # Revisit accounting, CHUNKED: poses arrive far more often than the
+            # disk advances one map cell, so judging per-sample would flag
+            # virgin-floor driving as revisit. Instead accumulate distance and
+            # newly-stamped cells, and every ~0.25 m compare against what a
+            # disk sweeping virgin floor would stamp (2*rad cells per cell of
+            # travel). A chunk that stamped under a quarter of that is
+            # re-cleaning already-covered floor — the around-the-furniture
+            # transit distance revisit_ratio exists to expose.
+            if self.job_active:
+                self._chunk_len = getattr(self, '_chunk_len', 0.0) \
+                    + getattr(self, '_pending_step', 0.0)
+                self._chunk_new = getattr(self, '_chunk_new', 0) + new_cells
+                if self._chunk_len >= 0.25:
+                    expected = 2.0 * rad * (self._chunk_len / res)
+                    if self._chunk_new < 0.25 * expected:
+                        self.revisit_len += self._chunk_len
+                    self._chunk_len = 0.0
+                    self._chunk_new = 0
+            self._pending_step = 0.0
 
     # ------------------------------------------------------------ report
     def _ratio(self) -> float:
@@ -243,8 +267,11 @@ class CoverageMeter(Node):
             return
         ratio = self._ratio()
         eff = 0.0 if self.sim_unstable else self._efficiency()
+        revisit = (self.revisit_len / self.path_len
+                   if self.path_len > 1e-6 else 0.0)
         self.ratio_pub.publish(Float32(data=float(ratio)))
         self.eff_pub.publish(Float32(data=float(min(eff, 1.0))))
+        self.revisit_pub.publish(Float32(data=float(revisit)))
         self.unstable_pub.publish(Bool(data=self.sim_unstable))
 
         sim_t = 0.0
@@ -267,6 +294,7 @@ class CoverageMeter(Node):
 
         self.get_logger().info(
             f'COVERAGE_REPORT coverage={ratio:.4f} efficiency={eff:.4f} '
+            f'revisit_ratio={revisit:.4f} '
             f'path_m={self.path_len:.2f} ideal_m={self._ideal_path_len():.2f} '
             f'reachable_cells={self.total_reachable} sim_t={sim_t:.1f} '
             f'target_hit={self.target_hit} t_target={self.t_target} '
@@ -317,15 +345,18 @@ def _flood_fill(free, start):
 
 
 def _stamp_disk(covered, mask, cx, cy, rad):
+    """Mark the cleaning disk; return how many cells were NEWLY covered."""
     h, w = covered.shape
     y0, y1 = max(0, cy - rad), min(h, cy + rad + 1)
     x0, x1 = max(0, cx - rad), min(w, cx + rad + 1)
     if y0 >= y1 or x0 >= x1:
-        return
+        return 0
     ys = np.arange(y0, y1)[:, None]
     xs = np.arange(x0, x1)[None, :]
     disk = (ys - cy) ** 2 + (xs - cx) ** 2 <= rad * rad
-    covered[y0:y1, x0:x1] |= disk & mask[y0:y1, x0:x1]
+    add = disk & mask[y0:y1, x0:x1] & ~covered[y0:y1, x0:x1]
+    covered[y0:y1, x0:x1] |= add
+    return int(add.sum())
 
 
 def main(args=None) -> None:

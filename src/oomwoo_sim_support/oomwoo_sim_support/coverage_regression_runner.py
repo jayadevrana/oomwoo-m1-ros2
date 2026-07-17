@@ -76,6 +76,7 @@ class CoverageRunner(Node):
 
         self.coverage = 0.0
         self.efficiency = 0.0
+        self.revisit_ratio = 0.0
         self.best = 0.0
         self.last_gain_sim_t = None
         self.sim_unstable = False
@@ -92,6 +93,8 @@ class CoverageRunner(Node):
         self.create_subscription(Float32, '/coverage_meter/ratio', self._on_cov, 10)
         self.create_subscription(
             Float32, '/coverage_meter/efficiency', self._on_eff, 10)
+        self.create_subscription(
+            Float32, '/coverage_meter/revisit_ratio', self._on_revisit, 10)
         self.create_subscription(
             Bool, '/coverage_meter/sim_unstable', self._on_unstable, latched)
         # planner publishes cleaning_active False when the sweep + gap-fill
@@ -112,6 +115,9 @@ class CoverageRunner(Node):
 
     def _on_eff(self, msg):
         self.efficiency = float(msg.data)
+
+    def _on_revisit(self, msg):
+        self.revisit_ratio = float(msg.data)
 
     def _on_unstable(self, msg):
         self.sim_unstable = self.sim_unstable or bool(msg.data)
@@ -200,6 +206,7 @@ class CoverageRunner(Node):
             'efficiency_at_target': (round(gate_eff, 4)
                                      if self.target_crossed else None),
             'efficiency_final': round(self.efficiency, 4),  # incl. thoroughness tax
+            'revisit_ratio': round(self.revisit_ratio, 4),
             'efficiency_target': self.eff_target,
             'time_to_target_s': (round(self.t_to_target, 1)
                                  if self.target_crossed else None),

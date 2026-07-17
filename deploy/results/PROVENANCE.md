@@ -25,3 +25,21 @@ Regenerating is a one-command re-run per suite (report lands at
 bash deploy/run_coverage_regression.sh      # -> coverage_testroom.json
 bash deploy/run_coverage_livingroom.sh      # -> coverage_livingroom.json (exits 1 by design: 89.3 % < the 90 % gate)
 ```
+
+## Cell-decomposition iteration (in progress)
+
+- `coverage_testroom_bcd.json` — test_room with boustrophedon cell
+  decomposition + true-geometry clearance (planner 0.18, inflation 0.10):
+  coverage 97.0% sweep_complete, efficiency 89.4% at the 90% crossing (767 s),
+  71.3%→73.5% final, revisit_ratio 0.218. PASS — improvement over the
+  pre-decomposition 94.5%/84.8%, no regression.
+- `coverage_livingroom_bcd_wip.json` — living_room, same config: the SCORED
+  run ends `plateau` at 49.4% because a ~15-minute wedge episode under
+  furniture (10 open-loop escapes) froze coverage past the 180 sim-s plateau
+  window. The graph kept sweeping after the runner scored: the meter's last
+  log line reads coverage=0.8553 efficiency=0.5033 revisit_ratio=0.5330
+  path_m=70.30 at `coverage complete` — better path economy than the old
+  32.0% but outside the scored window and below the 90% acceptance. Honest
+  status: decomposition works (17 cells, one transit each); the true-geometry
+  contact regime needs the wedge-recovery iteration before the living_room
+  acceptance run can pass. WIP by design — not presented as a pass.

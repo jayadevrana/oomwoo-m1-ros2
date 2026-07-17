@@ -258,13 +258,14 @@ class CoveragePlanner(Node):
     # ------------------------------------------------------------- planning
     def _plan_waypoints(self) -> List[PoseStamped]:
         """
-        Boustrophedon sweep over the robot's *reachable* inflated-free area.
+        Boustrophedon cell decomposition over the reachable inflated-free area.
 
-        Waypoints are restricted to the free-space connected component that
-        contains the robot (flood fill), so the planner is never handed a pose
-        stranded behind a wall or in the map-border inflation — the failure that
-        aborts a NavigateThroughPoses goal. Rows are emitted starting from the
-        robot's row outward to minimize the initial transit.
+        The reachable component (flood fill from the robot) is decomposed into
+        cells whose row slices stay 1-1 connected; each cell is swept fully
+        with its own serpentine before moving on, and cells are chained
+        nearest-entry-first. Waypoints are restricted to the robot's connected
+        component, so the planner is never handed a pose stranded behind a
+        wall or in the map-border inflation.
         """
         info = self.map_msg.info
         res = info.resolution
@@ -290,13 +291,19 @@ class CoveragePlanner(Node):
         step = max(1, int(round(step_m / res)))
         min_seg_cells = max(1, int(round(self.min_segment_len / res)))
 
-        # Continuous bottom-to-top serpentine (no down-then-up split). The robot
-        # transits once to the first row, then sweeps straight through — this
-        # avoids a wasteful mid-sweep jump across the room. The first row is
-        # chosen as whichever end (bottom/top) is nearer the robot.
-        rows = list(range(0, h, step))
-        if rows and abs(seed[0] - rows[-1]) < abs(seed[0] - rows[0]):
-            rows.reverse()
+        # Boustrophedon CELL DECOMPOSITION (not a naive whole-map lawnmower):
+        # cells are regions whose row slices stay 1-1 connected, so each is
+        # fully sweepable without leaving it. Cells are then chained nearest-
+        # first, entering each at whichever corner is closest — one transit
+        # per cell instead of one round-trip around the furniture per row.
+        cells = _decompose_cells(reachable)
+        # drop slivers a swath already catches from the neighbouring cell
+        cells = [c for c in cells
+                 if len(c) >= step or
+                 max(b - a + 1 for _, a, b in c) >= min_seg_cells]
+        self.get_logger().info(
+            f'cell decomposition: {len(cells)} sweepable cells '
+            f'({len(cells) - 1 if cells else 0} inter-cell transits)')
 
         # intermediate waypoints along each row keep the robot ON the straight
         # row line: with only two endpoints, the controller cuts the corner
@@ -304,25 +311,49 @@ class CoveragePlanner(Node):
         # slivers. One waypoint per `substep` metres tightens tracking.
         substep = max(1, int(round(1.0 / res)))
 
+        def cell_rows(cell):
+            """Sample the cell's rows every `step`, always keeping the last."""
+            rows = cell[::step]
+            if rows[-1] != cell[-1]:
+                rows = list(rows) + [cell[-1]]
+            return list(rows)
+
+        def corners(cell):
+            """(row, col, enter_at_last_row, enter_at_b) for 4 entry corners."""
+            (r0, a0, b0), (r1, a1, b1) = cell[0], cell[-1]
+            return [(r0, a0, False, False), (r0, b0, False, True),
+                    (r1, a1, True, False), (r1, b1, True, True)]
+
         waypoints: List[Tuple[float, float]] = []
-        flip = False
-        for row in rows:
-            cols = np.where(reachable[row])[0]
-            if cols.size == 0:
-                continue
-            y = oy + (row + 0.5) * res
-            for seg in _contiguous_runs(cols):
-                if seg[-1] - seg[0] + 1 < min_seg_cells:
+        cur = (seed[0], seed[1])                       # (row, col)
+        remaining = list(cells)
+        while remaining:
+            # nearest cell by best entry corner from where the sweep now is
+            best = None
+            for ci, cell in enumerate(remaining):
+                for (r, c, from_last, at_b) in corners(cell):
+                    d = (r - cur[0]) ** 2 + (c - cur[1]) ** 2
+                    if best is None or d < best[0]:
+                        best = (d, ci, from_last, at_b)
+            _, ci, from_last, at_b = best
+            cell = remaining.pop(ci)
+            rows = cell_rows(cell)
+            if from_last:
+                rows.reverse()
+            flip = at_b                                 # start at the b end
+            for (row, a, b) in rows:
+                if b - a + 1 < min_seg_cells:
                     continue
-                a, b = int(seg[0]), int(seg[-1])
+                y = oy + (row + 0.5) * res
                 pts = list(range(a, b + 1, substep))
                 if pts[-1] != b:
                     pts.append(b)
-                if flip:                       # serpentine per row
+                if flip:
                     pts.reverse()
                 for c in pts:
                     waypoints.append((ox + (c + 0.5) * res, y))
-            flip = not flip
+                flip = not flip
+                cur = (row, pts[-1])
 
         poses: List[PoseStamped] = []
         for (x, y) in waypoints:
@@ -616,6 +647,60 @@ def _nearest_true(mask: np.ndarray, cx: int, cy: int, max_r: int = 25):
             ys, xs = np.where(sub)
             return (y0 + int(ys[0]), x0 + int(xs[0]))
     return None
+
+
+def _decompose_cells(reachable: np.ndarray):
+    """
+    Boustrophedon cell decomposition of the reachable mask.
+
+    Sweep row by row; wherever the connectivity of the free slice changes
+    (an interval appears, vanishes, splits at an obstacle's leading edge, or
+    merges past its trailing edge) close the affected cells and open new
+    ones. Each returned cell is a list of (row, col_a, col_b) with exactly
+    ONE interval per row — by construction sweepable with a serpentine that
+    never leaves the cell. This is what kills the per-row round-trips a
+    naive whole-map lawnmower makes around furniture: N bisected rows stop
+    costing N transits around the obstacle and cost exactly one transit
+    between the cells on either side.
+    """
+    h, _ = reachable.shape
+    done = []
+    # active cells: list of dicts {'rows': [(r, a, b), ...], 'span': (a, b)}
+    active = []
+    for r in range(h):
+        row = np.where(reachable[r])[0]
+        runs = ([(int(s[0]), int(s[-1])) for s in _contiguous_runs(row)]
+                if row.size else [])
+        # overlap bookkeeping between last-row spans and this row's runs
+        prev_spans = [c['span'] for c in active]
+        run_hits = [[] for _ in runs]        # prev cells each run touches
+        cell_hits = [[] for _ in active]     # runs each prev cell touches
+        for i, (ra, rb) in enumerate(runs):
+            for j, (pa, pb) in enumerate(prev_spans):
+                if not (rb < pa or ra > pb):
+                    run_hits[i].append(j)
+                    cell_hits[j].append(i)
+        next_active = []
+        consumed = set()
+        for j, cell in enumerate(active):
+            hits = cell_hits[j]
+            if len(hits) == 1 and len(run_hits[hits[0]]) == 1:
+                # clean 1-1 continuation
+                i = hits[0]
+                a, b = runs[i]
+                cell['rows'].append((r, a, b))
+                cell['span'] = (a, b)
+                next_active.append(cell)
+                consumed.add(i)
+            else:
+                # vanished, split, or part of a merge: this cell is complete
+                done.append(cell['rows'])
+        for i, (a, b) in enumerate(runs):
+            if i not in consumed:
+                next_active.append({'rows': [(r, a, b)], 'span': (a, b)})
+        active = next_active
+    done.extend(c['rows'] for c in active)
+    return [c for c in done if c]
 
 
 def _flood_fill(mask: np.ndarray, start) -> np.ndarray:

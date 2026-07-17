@@ -17,6 +17,7 @@ import numpy as np
 
 from oomwoo_coverage.coverage_planner_node import (
     _contiguous_runs,
+    _decompose_cells,
     _dilate,
     _flood_fill,
     _nearest_true,
@@ -55,6 +56,41 @@ def test_flood_fill_two_chambers_stay_separate():
     mask[:, 4] = False                       # wall splits the room in two
     left = _flood_fill(mask, (0, 0))
     assert bool(left[5, 3]) and not left[:, 5:].any()
+
+
+def test_decompose_open_room_is_one_cell():
+    free = np.zeros((20, 20), dtype=bool)
+    free[1:19, 1:19] = True
+    cells = _decompose_cells(free)
+    assert len(cells) == 1
+    assert len(cells[0]) == 18                  # every interior row present
+
+
+def test_decompose_sofa_splits_into_four_cells():
+    # a central obstacle (the "sofa") must yield: below, left-of, right-of,
+    # above — four cells, each with exactly ONE interval per row, so a
+    # serpentine can sweep each without transiting around the obstacle
+    free = np.zeros((30, 30), dtype=bool)
+    free[1:29, 1:29] = True
+    free[10:20, 10:20] = False                  # the sofa
+    cells = _decompose_cells(free)
+    assert len(cells) == 4
+    for cell in cells:
+        rows = [r for r, _, _ in cell]
+        assert len(rows) == len(set(rows)), 'one interval per row per cell'
+    total = sum(b - a + 1 for cell in cells for _, a, b in cell)
+    assert total == int(free.sum()), 'decomposition must cover all free cells'
+
+
+def test_decompose_no_cell_straddles_the_obstacle():
+    free = np.zeros((30, 30), dtype=bool)
+    free[1:29, 1:29] = True
+    free[10:20, 10:20] = False
+    for cell in _decompose_cells(free):
+        for r, a, b in cell:
+            if 10 <= r < 20:
+                assert b < 10 or a >= 20, \
+                    'a cell interval must never span the obstacle'
 
 
 def test_nearest_true_prefers_close_cells():

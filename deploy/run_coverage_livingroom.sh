@@ -4,10 +4,10 @@
 # Same harness as run_coverage_regression.sh, pointed at the cluttered
 # living_room + its world-aligned map, spawning at the clearest floor cell.
 # Uses the PURE STOCK world and models — no overrides (stock mesh collisions
-# work headless). robot_radius 0.24: low enough to sweep under furniture (the marble
-# table's legs), but above the costmap inflation (0.20) so the plan never
-# enters wedge-prone slots Nav2 cannot recover in. Efficiency lands below the
-# open test_room by design — this reports the honest number for a tight room.
+# work headless). robot_radius 0.18 = true inscribed radius + 1cm, aligned with
+# the meter and Nav2 footprint: gaps down to ~0.4 m (under-furniture leg gaps)
+# stay sweepable. Contact is a design feature (bumper), not a failure. The
+# cell-decomposition sweep reports the honest number for a tight room.
 #
 #   RUNS=3 ./run_coverage_livingroom.sh   # repeat and report the spread
 set -eo pipefail
@@ -26,8 +26,8 @@ X=${X:-0.32}; Y=${Y:-1.59}; YAW=${YAW:-0.0}
 
 echo "[run] headless coverage on living_room"
 echo "[run] world=$WORLD"
-echo "[run] map=$MAP  spawn=($X,$Y)  robot_radius=0.24"
+echo "[run] map=$MAP  spawn=($X,$Y)  robot_radius=0.18"
 # preserve any incoming LAUNCH_ARGS and forward extra CLI args (e.g. gui:=true)
-export LAUNCH_ARGS="world:=$WORLD map:=$MAP x_pose:=$X y_pose:=$Y yaw:=$YAW robot_radius:=0.24 ${LAUNCH_ARGS:-} $*"
+export LAUNCH_ARGS="world:=$WORLD map:=$MAP x_pose:=$X y_pose:=$Y yaw:=$YAW robot_radius:=0.18 ${LAUNCH_ARGS:-} $*"
 export LOG=${LOG:-/tmp/coverage_livingroom.log}
 exec bash "$(dirname "${BASH_SOURCE[0]}")/run_coverage_regression.sh"
