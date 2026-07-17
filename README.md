@@ -21,13 +21,22 @@ thinks — see "How it's measured" below.
 
 | Behaviour | Target | Measured |
 |---|---|---|
-| Coverage | ≥ 90 % | **90.1 %** |
-| Cleaning path efficiency | ≥ 80 % | **86.8 %** |
+| Coverage (uncapped, sweep run to completion) | ≥ 90 % | **94.5 %** |
+| Efficiency at the 90 % crossing | ≥ 80 % | **84.8 %** (785 s) |
+| Efficiency incl. finishing the last ~4.5 % | — | 71.3 % (reported, not gated) |
 | Relocalize success rate | ≥ 90 % | **100 % (10/10)** |
 | Relocalize time | ≤ 30 s | **6.0 s avg, 9.2 s worst** |
 | Relocalize accuracy | ≤ 2 m | **≤ 0.12 m** |
 
-Both suites exit 0.
+Both suites exit 0. Coverage is **not target-capped**: the planner runs the
+full sweep + gap-fill to completion and the report shows where it genuinely
+ends (`end_reason=sweep_complete`), so 94.5 % is a measured ceiling, not a
+stop condition. The two gates are one contract condition — reach ≥90 % at
+≥80 % efficiency — so efficiency is judged at the moment coverage first
+crosses 90 %; pushing on to 94.5 % costs extra spot-revisit path (diminishing
+returns), which the report discloses as `efficiency_final`. The coverage
+denominator is built from the **true body radius (0.1745 m)**, never the
+planner's clearance — floor a timid planner won't enter counts against it.
 
 ## The packages
 
@@ -158,13 +167,20 @@ world-aligned map by slicing the stock collision meshes at the robot's height
 band (2–20 cm). Open-under furniture contributes only its legs, so the floor
 beneath the table counts as cleanable — which is the whole point of a vacuum.
 
-Measured on the **pure stock world** (no overrides): **88.9 % coverage**,
-efficiency 32.9 %, sim stable (`pose_jumps=0`), ended on plateau. Essentially
-identical to the earlier override-era figure (89.7 %) — which is the point: the
-override never mattered, the stock mesh collisions were doing the job all along.
+Measured on the **pure stock world** (no overrides), sweep run to completion
+with the true-geometry meter: **89.3 % coverage** (`end_reason=sweep_complete`
+— the planner genuinely exhausted its sweep + gap-fill passes), efficiency
+32.0 %, sim stable (`pose_jumps=0`). Consistent with earlier runs (88.9 %,
+override-era 89.7 %) — the stock mesh collisions were doing the job all along.
 The room is tight (~1.5 m widest gap), so efficiency lands well below the open
 `test_room`'s by design; the last ~11 % is pockets Nav2's local costmap can't
 enter. The script prints this and writes `coverage_report.json`.
+
+One decoupling data point worth recording: with the meter switched from the
+planner's clearance (0.24) to the true body radius (0.1745), the living_room
+denominator is **byte-identical (5661 cells)** — the `cleaning_radius`
+dilation reclaims the erosion difference at these radii. So the coupling was
+structurally wrong (fixed) but empirically immaterial in this world too.
 
 ## One gotcha: run on x86-64, not ARM
 
