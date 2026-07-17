@@ -175,8 +175,10 @@ with the true-geometry meter: **89.3 % coverage** (`end_reason=sweep_complete`
 — the planner genuinely exhausted its sweep + gap-fill passes), efficiency
 32.0 %, sim stable (`pose_jumps=0`). Consistent with earlier runs (88.9 %,
 override-era 89.7 %) — the stock mesh collisions were doing the job all along.
-The room is tight (max obstacle clearance ~0.78 m anywhere, by distance
-transform of the map), so efficiency lands well below the open
+The room is passage-dominated: of 7795 raw reachable free cells, only 5647
+survive a 0.24 m clearance erosion (`tools/compute_denominator.py`) — most of
+the floor is within a body-width of furniture. So efficiency lands well below
+the open
 `test_room`'s by design; the last ~11 % is pockets Nav2's local costmap can't
 enter. The script prints this and writes `coverage_report.json`.
 
