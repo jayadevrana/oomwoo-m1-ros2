@@ -25,7 +25,7 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import (
-    DeclareLaunchArgument, IncludeLaunchDescription, TimerAction)
+    DeclareLaunchArgument, IncludeLaunchDescription)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
@@ -103,9 +103,12 @@ def generate_launch_description() -> LaunchDescription:
                     ('covered_grid', '/coverage_meter/covered_grid'),
                     ('navigate_to_pose', '/navigate_to_pose')])
 
+    # No fixed timers: the meter self-gates on /map + /ground_truth, and the
+    # planner self-gates on /amcl_pose + the Nav2 action server (retrying until
+    # ready). cleaning_active is latched, so meter accounting can't miss the
+    # planner's start regardless of launch order.
     return LaunchDescription(reg_args + [
         base,
-        TimerAction(period=16.0, actions=[coverage_meter]),
-        # start the sweep after localization + Nav2 have settled
-        TimerAction(period=32.0, actions=[coverage_planner]),
+        coverage_meter,
+        coverage_planner,
     ])

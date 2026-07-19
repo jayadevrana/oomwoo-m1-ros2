@@ -35,12 +35,15 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
-    ExecuteProcess,
+    IncludeLaunchDescription,
     OpaqueFunction,
+    RegisterEventHandler,
     SetEnvironmentVariable,
     TimerAction,
 )
 from launch.conditions import IfCondition, UnlessCondition
+from launch.event_handlers import OnProcessExit
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
 
 from launch_ros.actions import Node
@@ -121,11 +124,29 @@ def generate_launch_description() -> LaunchDescription:
             package='ros_gz_bridge', executable='parameter_bridge',
             output='screen',
             parameters=[{'config_file': bridge_sim, 'use_sim_time': True}])
+        # EVENT-BASED spawn (mirrors kaiaai's world.launch.py): create runs
+        # immediately and WAITS on its own -timeout for Gazebo + the
+        # robot_description topic to be ready, instead of firing on a fixed
+        # 10 s timer that races a slow/cold GL init. -timeout matches kaiaai.
         spawn = Node(
             package='ros_gz_sim', executable='create', output='screen',
             arguments=['-world', 'default', '-topic', 'robot_description',
-                       '-name', model, '-x', x0, '-y', y0, '-z', '0.06',
-                       '-Y', yaw0])
+                       '-name', model, '-timeout', '180',
+                       '-x', x0, '-y', y0, '-z', '0.06', '-Y', yaw0,
+                       '-allow_renaming', 'false'])
+        # Nav2 comes up only AFTER the robot is actually in the world — gated
+        # on the spawn process exiting, not a fixed timer racing gz's cold
+        # start. Localization (map_server + AMCL) starts on that event;
+        # navigation follows a short, DETERMINISTIC 8 s later so AMCL has
+        # published the map->odom transform before the Nav2 global costmap
+        # activates (activating it first fails). This stagger is safe — it's
+        # measured from the already-spawned robot, not the unpredictable
+        # Gazebo startup — so it is not the fragile fixed-timer pattern.
+        nav_on_spawn = RegisterEventHandler(
+            OnProcessExit(
+                target_action=spawn,
+                on_exit=localization
+                + [TimerAction(period=8.0, actions=navigation)]))
         return [
             # models + meshes resolvable by gz (stock kaiaai models + the robot
             # description). The stock living_room furniture — including the
@@ -135,18 +156,30 @@ def generate_launch_description() -> LaunchDescription:
                 'GZ_SIM_RESOURCE_PATH',
                 os.pathsep.join([os.path.join(pkg_gazebo, 'models'),
                                  pkg_robot])),
-            rsp, bridge,
-            TimerAction(period=10.0, actions=[spawn]),
+            rsp, bridge, spawn, nav_on_spawn,
         ]
 
-    # same world, same physics, same everything — only the rendering surface
-    # differs between these two, so headless and GUI runs are comparable.
-    gz_server = ExecuteProcess(
-        cmd=['gz', 'sim', '-s', '-r', '--headless-rendering', '-v', '1', world],
-        output='screen', condition=headless)
-    gz_gui = ExecuteProcess(
-        cmd=['gz', 'sim', '-r', '-v', '1', world],
-        output='screen', condition=gui)
+    # Gazebo via the official ros_gz_sim wrapper (mirrors kaiaai): it
+    # coordinates the server↔GUI startup handshake that the raw `gz sim`
+    # command doesn't — the fix for the intermittent black-screen GUI render.
+    # Same world/physics either way; only the rendering surface differs, so
+    # headless and GUI runs stay comparable. Headless passes -s
+    # (server-only) + --headless-rendering so software GL still drives the
+    # offscreen LiDAR in CI.
+    gz_launch = os.path.join(
+        get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')
+    gz_server = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(gz_launch),
+        launch_arguments={
+            'gz_args': ['-s -r --headless-rendering -v 1 ', world],
+            'on_exit_shutdown': 'true'}.items(),
+        condition=headless)
+    gz_gui = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(gz_launch),
+        launch_arguments={
+            'gz_args': ['-r -v 1 ', world],
+            'on_exit_shutdown': 'true'}.items(),
+        condition=gui)
 
     # Explicit localization (map_server + AMCL + lifecycle) with an absolute
     # map path — avoids nav2_bringup's map-arg substitution quirk and keeps the
@@ -249,8 +282,11 @@ def generate_launch_description() -> LaunchDescription:
     # initialpose_pub node remains available for bringups that need to seed a
     # pose over /initialpose instead.
 
+    # No fixed timers: gz starts immediately, robot_setup spawns the robot the
+    # moment Gazebo is ready (create -timeout), and Nav2 is gated on that spawn
+    # exiting. ground_truth self-gates on /odom. The application nodes wait on
+    # their own inputs, so the whole graph is event-ordered, not clock-ordered.
     return LaunchDescription(args + set_env + [
-        OpaqueFunction(function=robot_setup),
         gz_server, gz_gui, ground_truth,
-        TimerAction(period=14.0, actions=localization + navigation),
+        OpaqueFunction(function=robot_setup),
     ])

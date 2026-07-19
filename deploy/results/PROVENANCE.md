@@ -43,3 +43,33 @@ bash deploy/run_coverage_livingroom.sh      # -> coverage_livingroom.json (exits
   status: decomposition works (17 cells, one transit each); the true-geometry
   contact regime needs the wedge-recovery iteration before the living_room
   acceptance run can pass. WIP by design — not presented as a pass.
+
+## Cell-decomposition + event-launch + wedge-recovery iteration (final)
+
+Config: boustrophedon cell decomposition, Nav2 inflation_radius 0.10 (measured
+sweet spot — see below), zone-only wedge recovery, event-based launch, runner
+wall-clock backstops. 31 unit/lint tests green; launch verified 3/3 on repeated
+headless bringup.
+
+- `coverage_testroom_final.json` — test_room, PASS: **97.0% coverage** at
+  sweep_complete, **87.8% efficiency at the 90% crossing** (806 s), revisit 0.276.
+  Up from the pre-iteration 94.5%/84.8%; no regression.
+
+- living_room — **variable 50–85% across runs; does NOT reliably meet the 90%
+  gate.** Best observed 84.86% coverage (zone-only recovery let the sweep climb
+  past the old freeze); worst ~50.5% (robot wedges in a hard under-furniture
+  pocket cluster and the open-loop reverse can't free it that run). The wedge
+  recovery removed the earlier 15-minute single-pocket freeze (now discrete
+  events, coverage keeps climbing when the robot frees itself), but escape is
+  not guaranteed, so coverage is run-dependent. This is the honest blocker to
+  the living_room acceptance: a hard-pocket wedge the current recovery can't
+  always clear.
+
+- inflation_radius trade, measured: 0.02 (near-zero, per the client's
+  suggestion) is WORSE — the controller can't find collision-free trajectories
+  when obstacles are barely inflated, so the robot stalls/wedges. 0.175 (at the
+  inscribed radius) seals the tight leg gaps. 0.10 is the measured best.
+
+- revisit_ratio (new metric) tracks driven distance over already-covered floor:
+  ~0.12–0.28 on clean sweeps, rising to ~0.37 when the robot re-cleans while
+  fighting a wedge — the direct signal of the remaining inefficiency.

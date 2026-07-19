@@ -59,7 +59,7 @@ class CoverageRunner(Node):
         # wall-clock backstops: with use_sim_time, every other exit condition
         # depends on /clock — a sim that never starts (or freezes mid-run)
         # would otherwise hang this "CI-friendly" runner forever.
-        self.declare_parameter('max_wall_time_s', 2700.0)
+        self.declare_parameter('max_wall_time_s', 5400.0)
         self.declare_parameter('clock_dead_wall_s', 120.0)
         self.declare_parameter('plateau_s', 180.0)
         self.declare_parameter('plateau_eps', 0.005)
@@ -80,6 +80,7 @@ class CoverageRunner(Node):
         self.best = 0.0
         self.last_gain_sim_t = None
         self.sim_unstable = False
+        self.measurement_invalid = False
         self.target_crossed = False
         self.eff_at_target = 0.0
         self.t_to_target = 0.0
@@ -150,12 +151,15 @@ class CoverageRunner(Node):
                 last_sim = self._sim_now()
                 last_sim_advance_wall = now_wall
             elif now_wall - last_sim_advance_wall >= self.clock_dead_s:
+                # the sim clock stopped advancing — the measurement IS invalid
                 reason = 'clock_dead'
-                self.sim_unstable = True
+                self.measurement_invalid = True
                 break
             if now_wall - wall_start >= self.max_wall:
+                # ran out of real time. The coverage number so far is VALID
+                # (nothing teleported) — this is a slow host / incomplete run,
+                # NOT sim instability. Report it as its own reason.
                 reason = 'wall_timeout'
-                self.sim_unstable = True
                 break
             if self.sim_unstable:
                 # no point measuring further — the numbers are already invalid
@@ -192,8 +196,11 @@ class CoverageRunner(Node):
                 reason = 'max_time'
                 break
 
-        if self.sim_unstable and reason not in ('clock_dead', 'wall_timeout'):
+        if self.sim_unstable:
             reason = 'sim_unstable'
+        # a dead clock or a pose teleport both mean the numbers can't be
+        # trusted; a wall timeout does not (the coverage so far is real)
+        invalid = self.sim_unstable or getattr(self, 'measurement_invalid', False)
         # gate efficiency = at the target crossing (the contract condition);
         # if the target was never crossed the final value is all there is.
         gate_eff = self.eff_at_target if self.target_crossed else self.efficiency
@@ -212,7 +219,8 @@ class CoverageRunner(Node):
                                  if self.target_crossed else None),
             'end_reason': reason,
             'sim_unstable': self.sim_unstable,
-            'pass': bool(not self.sim_unstable
+            'measurement_valid': not invalid,
+            'pass': bool(not invalid
                          and self.coverage >= self.cov_target
                          and gate_eff >= self.eff_target),
         }
@@ -221,13 +229,15 @@ class CoverageRunner(Node):
                 json.dump(result, f, indent=2)
         except OSError as e:
             self.get_logger().warn(f'could not write report: {e}')
-        if self.sim_unstable:
+        if invalid:
             # Invalid measurement, NOT a behavior failure: distinct exit code
             # so CI/users don't read a physics glitch as a coverage regression.
+            why = ('sim unstable: ground-truth pose teleported'
+                   if self.sim_unstable else f'sim clock stalled ({reason})')
             self.get_logger().error(
-                'COVERAGE_SUMMARY MEASUREMENT INVALID (sim unstable: ground-'
-                'truth pose teleported). This host cannot run the sim '
-                'faithfully — use a native x86-64 Linux machine or CI runner. '
+                f'COVERAGE_SUMMARY MEASUREMENT INVALID ({why}). This host '
+                'cannot run the sim faithfully — use a native x86-64 Linux '
+                'machine or CI runner. '
                 f'coverage={result["coverage"]:.4f} (informational only)')
             return 2
         eat = result['efficiency_at_target']

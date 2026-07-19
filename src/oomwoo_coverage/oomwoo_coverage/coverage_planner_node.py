@@ -149,6 +149,22 @@ class CoveragePlanner(Node):
         self.escape_speed = self.get_parameter('escape_speed').value
         self.consecutive_skips = 0
         self.escape_until = None
+        # Wedge RECOVERY (not just escape): a blind reverse with no memory
+        # re-enters the same pocket, which is how the living_room run burned
+        # ~15 min looping. On a wedge we now (a) record a no-go zone at the
+        # spot so upcoming and gap-fill waypoints inside it are pruned,
+        # (b) abandon the rest of the cell the robot is stuck in, and
+        # (c) reverse out — capped by an escape budget so one run can't spin
+        # forever. Coverage keeps climbing on other cells, so the runner's
+        # plateau window never expires mid-wedge.
+        self.declare_parameter('wedge_avoid_radius', 0.45)   # m, no-go radius
+        self.declare_parameter('max_escapes', 25)            # per-run safety cap
+        self.wedge_avoid_radius = self.get_parameter('wedge_avoid_radius').value
+        self.max_escapes = self.get_parameter('max_escapes').value
+        self.wedge_zones = []        # [(x, y, r), ...] world-frame no-go pockets
+        self.escapes_done = 0
+        self.abandoned_cells = set()  # cell ids the robot gave up on
+        self.wp_cell = []            # cell id per cached pose (main sweep only)
 
         # --- ROS plumbing -------------------------------------------------
         # Coverage % comes from the coverage_meter (ground-truth based), so this
@@ -234,6 +250,23 @@ class CoveragePlanner(Node):
     def _on_covered(self, msg: OccupancyGrid) -> None:
         self.covered_grid = np.asarray(msg.data, dtype=np.int8).reshape(
             msg.info.height, msg.info.width)
+
+    def _in_wedge_zone(self, pose) -> bool:
+        """Return True when a waypoint falls inside a recorded wedge pocket."""
+        return _pt_in_zones(pose.pose.position.x, pose.pose.position.y,
+                            self.wedge_zones)
+
+    def _skip_waypoint(self, idx) -> bool:
+        """Skip a waypoint that's already clean, in a no-go pocket, or abandoned."""
+        pose = self.cached_poses[idx]
+        if self._covered_at(pose):
+            return True
+        if self._in_wedge_zone(pose):
+            return True
+        if self.wp_cell and idx < len(self.wp_cell) \
+                and self.wp_cell[idx] in self.abandoned_cells:
+            return True
+        return False
 
     def _covered_at(self, pose) -> bool:
         """Return True when the disk around this waypoint is already mostly clean."""
@@ -325,8 +358,10 @@ class CoveragePlanner(Node):
                     (r1, a1, True, False), (r1, b1, True, True)]
 
         waypoints: List[Tuple[float, float]] = []
-        cur = (seed[0], seed[1])                       # (row, col)
+        wp_cells: List[int] = []                        # cell id per waypoint
+        cur = (seed[0], seed[1])                        # (row, col)
         remaining = list(cells)
+        cell_seq = 0
         while remaining:
             # nearest cell by best entry corner from where the sweep now is
             best = None
@@ -352,9 +387,14 @@ class CoveragePlanner(Node):
                     pts.reverse()
                 for c in pts:
                     waypoints.append((ox + (c + 0.5) * res, y))
+                    wp_cells.append(cell_seq)
                 flip = not flip
                 cur = (row, pts[-1])
+            cell_seq += 1
 
+        # reset per-plan wedge state and record the cell tags for abandon logic
+        self.wp_cell = wp_cells
+        self.abandoned_cells = set()
         poses: List[PoseStamped] = []
         for (x, y) in waypoints:
             p = PoseStamped()
@@ -399,9 +439,10 @@ class CoveragePlanner(Node):
         # SAME waypoint instead of burning through the whole list
 
     def _send_next(self) -> None:
-        # skip waypoints already cleaned (coverage grid)
+        # skip waypoints already cleaned, inside a no-go pocket, or in an
+        # abandoned cell — this is what stops the sweep re-entering a wedge
         while (self.wp_index < len(self.cached_poses)
-               and self._covered_at(self.cached_poses[self.wp_index])):
+               and self._skip_waypoint(self.wp_index)):
             self.wp_index += 1
             self.wp_retries = 0
         if self.wp_index >= len(self.cached_poses):
@@ -418,6 +459,7 @@ class CoveragePlanner(Node):
                 if gaps:
                     self.gapfill_passes += 1
                     self.cached_poses = gaps
+                    self.wp_cell = []          # gap-fill poses have no cell tag
                     self.wp_index = 0
                     self.get_logger().info(
                         f'gap-fill pass {self.gapfill_passes}: '
@@ -481,10 +523,15 @@ class CoveragePlanner(Node):
             order.append(cur)
         poses = []
         for (cx, cy) in order:
+            wx = info.origin.position.x + (cx + 0.5) * res
+            wy = info.origin.position.y + (cy + 0.5) * res
+            # never re-target a known wedge pocket in gap-fill either
+            if _pt_in_zones(wx, wy, self.wedge_zones):
+                continue
             p = PoseStamped()
             p.header.frame_id = self.global_frame
-            p.pose.position.x = info.origin.position.x + (cx + 0.5) * res
-            p.pose.position.y = info.origin.position.y + (cy + 0.5) * res
+            p.pose.position.x = wx
+            p.pose.position.y = wy
             p.pose.orientation.w = 1.0
             poses.append(p)
         return poses
@@ -596,14 +643,33 @@ class CoveragePlanner(Node):
                 self.awaiting = False
                 self.wp_retries = self.max_retries    # force skip next result
         # several skips in a row = wedged in a costmap-lethal pocket; Nav2's
-        # own recoveries refuse to move there, so back straight out ourselves
+        # own recoveries refuse to move there, so recover ourselves
         elif not self.awaiting and self.consecutive_skips >= self.escape_after:
-            self.get_logger().warn(
-                f'{self.consecutive_skips} waypoints skipped back-to-back — '
-                f'robot likely wedged; reversing {self.escape_sec}s to escape')
             self.consecutive_skips = 0
-            self.escape_until = self.get_clock().now() + rclpy.duration.Duration(
-                seconds=self.escape_sec)
+            # Record a no-go POCKET at the wedge spot so upcoming and gap-fill
+            # waypoints inside it are pruned — this alone stops the re-entry
+            # loop that used to freeze the run, WITHOUT abandoning the whole
+            # cell (that gave up too much cleanable floor). The rest of the
+            # cell is still swept, just skipping the small pocket.
+            if self.robot_xy is not None:
+                self.wedge_zones.append(
+                    (self.robot_xy[0], self.robot_xy[1], self.wedge_avoid_radius))
+            self.escapes_done += 1
+            # (c) reverse out — but only within the escape budget, so a
+            #     pathological world can't loop forever (pruning still carries
+            #     the sweep forward past the budget)
+            if self.escapes_done <= self.max_escapes:
+                self.get_logger().warn(
+                    f'wedged near waypoint {self.wp_index}: no-go pocket '
+                    f'recorded, cell abandoned, reversing {self.escape_sec}s '
+                    f'(escape {self.escapes_done}/{self.max_escapes})')
+                self.escape_until = self.get_clock().now() \
+                    + rclpy.duration.Duration(seconds=self.escape_sec)
+            else:
+                self.get_logger().warn(
+                    'escape budget spent; pruning pockets and continuing '
+                    '(no more reverses this run)')
+                self.next_send = self.get_clock().now()
         # dispatch the next waypoint once idle and past the cooldown
         elif not self.awaiting \
                 and self.get_clock().now() >= self.next_send:
@@ -624,6 +690,14 @@ def _dilate(mask: np.ndarray, radius: int) -> np.ndarray:
         shifted[:, :-1] |= out[:, 1:]
         out = shifted
     return out
+
+
+def _pt_in_zones(x: float, y: float, zones) -> bool:
+    """Return True when (x, y) lies within any (cx, cy, r) no-go circle."""
+    for (cx, cy, r) in zones:
+        if (x - cx) ** 2 + (y - cy) ** 2 <= r * r:
+            return True
+    return False
 
 
 def _contiguous_runs(cols: np.ndarray) -> List[np.ndarray]:

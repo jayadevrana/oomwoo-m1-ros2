@@ -21,7 +21,22 @@ from oomwoo_coverage.coverage_planner_node import (
     _dilate,
     _flood_fill,
     _nearest_true,
+    _pt_in_zones,
 )
+
+
+def test_pt_in_zones_inside_and_outside():
+    zones = [(1.0, 1.0, 0.35), (-2.0, 0.5, 0.5)]
+    assert _pt_in_zones(1.1, 0.9, zones)          # inside first pocket
+    assert _pt_in_zones(-2.0, 0.5, zones)         # dead centre of second
+    assert not _pt_in_zones(1.5, 1.5, zones)      # between, outside both
+    assert not _pt_in_zones(0.0, 0.0, [])         # no zones -> never inside
+
+
+def test_pt_in_zones_boundary_is_inclusive():
+    # a point exactly on the radius counts as inside (<=), so a wedge spot
+    # can't slip back in on a floating-point tie
+    assert _pt_in_zones(0.35, 0.0, [(0.0, 0.0, 0.35)])
 
 
 def test_contiguous_runs_splits_on_gaps():
