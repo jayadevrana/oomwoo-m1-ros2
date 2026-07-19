@@ -14,18 +14,20 @@
 """
 Headless OOMWOO simulation bringup shared by the regression harnesses.
 
-Brings up, fully headless (no GUI, offscreen rendering — CI/Docker friendly):
-  * Gazebo server (living_room world) with software rendering
-  * robot_state_publisher (oomwoo_one URDF)
-  * spawn of oomwoo_one
+Brings up, headless by default (offscreen rendering, CI/Docker friendly) or
+with the Gazebo GUI on gui:=true; world/map default to test_room:
+  * Gazebo via the ros_gz_sim gz_sim.launch.py wrapper (software GL headless)
+  * robot_state_publisher + spawn (create -timeout, on Gazebo-ready)
   * ros_gz bridges: sim sensors/actuators + ground-truth model poses
-  * Nav2 localization (map_server + AMCL) on the saved living_room map
-  * Nav2 navigation (planner/controller/bt_navigator/behaviors/waypoints)
-  * ground_truth pose publisher + a seeded /initialpose
+  * Nav2 localization (map_server + AMCL) — gated on the spawn completing
+  * Nav2 navigation (planner/controller/bt_navigator/behaviors) — 8 s after
+    localization so AMCL's map->odom exists before the costmap activates
+  * ground_truth pose publisher
 
 Coverage- and relocalization-specific nodes are added by the including launch.
-Staggered TimerActions keep the emulated-CPU startup orderly; the application
-nodes additionally wait on their own inputs, so exact timing is not critical.
+Startup is event-ordered (spawn-on-ready, Nav2-on-spawn) rather than
+clock-ordered; the one deliberate stagger is the 8 s localization->nav gap, and
+the application nodes also self-gate on their inputs.
 """
 
 import os
@@ -282,10 +284,13 @@ def generate_launch_description() -> LaunchDescription:
     # initialpose_pub node remains available for bringups that need to seed a
     # pose over /initialpose instead.
 
-    # No fixed timers: gz starts immediately, robot_setup spawns the robot the
-    # moment Gazebo is ready (create -timeout), and Nav2 is gated on that spawn
-    # exiting. ground_truth self-gates on /odom. The application nodes wait on
-    # their own inputs, so the whole graph is event-ordered, not clock-ordered.
+    # Event-ordered, not clock-ordered: gz starts immediately, robot_setup
+    # spawns the robot the moment Gazebo is ready (create -timeout), and
+    # localization is gated on that spawn completing. The one remaining timer
+    # is the deliberate 8 s localization->nav stagger inside robot_setup (so
+    # AMCL publishes map->odom before the Nav2 costmap activates) — measured
+    # from the already-spawned robot, not from the unpredictable gz start.
+    # ground_truth and the application nodes self-gate on their own inputs.
     return LaunchDescription(args + set_env + [
         gz_server, gz_gui, ground_truth,
         OpaqueFunction(function=robot_setup),

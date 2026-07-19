@@ -60,16 +60,22 @@ if [ "$RUNS" -gt 1 ]; then
   echo "[run] ===== VARIANCE over $RUNS runs ====="
   python3 - "$REPORT_DIR" <<'PY'
 import json, glob, statistics as st, sys
-rs = [json.load(open(p)) for p in sorted(glob.glob(sys.argv[1] + '/run*.json'))]
+allr = [json.load(open(p)) for p in sorted(glob.glob(sys.argv[1] + '/run*.json'))]
+# only valid measurements enter the spread; a clock_dead/unstable run's partial
+# coverage is meaningless and must not pollute min/max/mean
+rs = [r for r in allr if r.get('measurement_valid', True)]
+invalid = len(allr) - len(rs)
 for k in ('coverage', 'efficiency_at_target', 'efficiency_final'):
     v = [x for x in (r.get(k, r.get('efficiency')) for r in rs) if x is not None]
     if not v:
         continue
     print(f"  {k:11}: min={min(v):.4f} max={max(v):.4f} mean={st.mean(v):.4f}"
           + (f" stdev={st.stdev(v):.4f}" if len(v) > 1 else ""))
-print(f"  passes     : {sum(r['pass'] for r in rs)}/{len(rs)}"
-      f"  unstable: {sum(bool(r.get('sim_unstable')) for r in rs)}")
+print(f"  passes     : {sum(r['pass'] for r in allr)}/{len(allr)}"
+      f"  invalid(unstable/clock): {invalid}")
 PY
 fi
-echo "[run] overall exit: $WORST  (0=PASS, 1=target missed, 2=sim unstable on this host)"
+echo "[run] overall exit: $WORST  (0=PASS, 1=target missed — check end_reason:" \
+     "wall_timeout means the host ran out of real time, coverage is still valid;" \
+     "2=measurement invalid, sim unstable/clock stalled on this host)"
 exit $WORST

@@ -58,6 +58,22 @@ FREE = 0
 OCC_THRESH = 50
 
 
+def _chunk_is_reclean(chunk_len: float, chunk_new: int,
+                      rad: int, res: float) -> bool:
+    """
+    Decide whether a driven chunk was re-cleaning already-covered floor.
+
+    A disk of radius ``rad`` cells sweeping VIRGIN floor stamps ~2*rad new
+    cells per cell of travel; a chunk that stamped under a quarter of that
+    was mostly re-covering cleaned floor — the wasted-transit distance
+    ``revisit_ratio`` exists to expose. Chunking (vs per-sample) avoids
+    flagging genuine virgin driving, since poses arrive far faster than the
+    disk advances one map cell.
+    """
+    expected = 2.0 * rad * (chunk_len / res)
+    return chunk_new < 0.25 * expected
+
+
 def latched_qos() -> QoSProfile:
     return QoSProfile(
         depth=1, history=QoSHistoryPolicy.KEEP_LAST,
@@ -238,8 +254,8 @@ class CoverageMeter(Node):
                     + getattr(self, '_pending_step', 0.0)
                 self._chunk_new = getattr(self, '_chunk_new', 0) + new_cells
                 if self._chunk_len >= 0.25:
-                    expected = 2.0 * rad * (self._chunk_len / res)
-                    if self._chunk_new < 0.25 * expected:
+                    if _chunk_is_reclean(self._chunk_len, self._chunk_new,
+                                         rad, res):
                         self.revisit_len += self._chunk_len
                     self._chunk_len = 0.0
                     self._chunk_new = 0

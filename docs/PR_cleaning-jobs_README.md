@@ -51,19 +51,21 @@ Native x86-64 Linux, headless, straight from `run_coverage_regression.sh`
 (uncapped — the sweep runs to completion, `end_reason=sweep_complete`):
 
 ```
-coverage   = 94.5%  at sweep_complete              (target 90%)
-efficiency = 84.8%  at the 90% crossing (785 s)    (target 80%)
-             71.3%  over the whole sweep (reported, not gated)
+coverage   = 97.0%  at sweep_complete              (target 90%)
+efficiency = 87.8%  at the 90% crossing (806 s)    (target 80%)
+             68.5%  over the whole sweep (reported, not gated)
 result: PASS
 ```
 
-The sweep gets to ~87% on its own; the gap-fill passes over the leftover
-furniture-shadow pockets take it to 94.5%, where it genuinely ends — there is
+The sweep gets most of the way on its own; the gap-fill passes over the leftover
+furniture-shadow pockets take it to 97.0%, where it genuinely ends — there is
 no stop-at-target cap, and efficiency is judged at the moment coverage first
 crosses 90%. On the stock `living_room` (`run_coverage_livingroom.sh`) the same
-harness measures 89.3% at `sweep_complete`, efficiency 32.0% — the tight room
-caps both. The wall/furniture edge strip is left to the floor-care module per
-the RFC.
+harness now runs at true-geometry clearance (planner robot_radius 0.18,
+inflation 0.10) with cell decomposition + wedge recovery: coverage is variable
+~50–85% across runs and does NOT meet the 90% gate — that suite fails by design
+when it misses (a known open item, not presented as a pass). The wall/furniture
+edge strip is left to the floor-care module per the RFC.
 
 ## Notes / scope
 

@@ -9,9 +9,9 @@ Measured on a native x86-64 Linux box, Gazebo fully headless — these are exact
 what the two scripts print:
 
 ```
-Coverage:        94.5%   uncapped, sweep run to completion   PASS (target 90%)
-Efficiency:      84.8%   at the 90% crossing (785s)          PASS (target 80%)
-                 71.3%   incl. finishing the last ~4.5% (reported, not gated)
+Coverage:        97.0%   uncapped, sweep run to completion   PASS (target 90%)
+Efficiency:      87.8%   at the 90% crossing (806s)          PASS (target 80%)
+                 68.5%   over the whole sweep (reported, not gated)
 Relocalization:  10/10   (target 90%)     PASS
   time:          6.0s avg, 9.2s worst  (target 30s)
   accuracy:      <= 0.12m every trial  (target 2m)
@@ -67,13 +67,14 @@ You were right on both counts, and the repo now reflects it:
   up on several waypoints in a row inside inflated-lethal pockets, the planner
   reverses straight out open-loop and resumes the sweep.
 
-Run it: `deploy/run_coverage_livingroom.sh`. Measured on the **pure stock
-world** (no overrides), sweep run to completion with the true-geometry meter:
-**89.3% coverage** (`sweep_complete`), efficiency 32.0%, stable
-(pose_jumps=0). Consistent with earlier runs (88.9%, override-era 89.7%) —
-which confirms the override never did anything useful; the stock mesh
-collisions were already correct. The tight room caps efficiency, and the last
-~11% is pockets Nav2's local costmap can't enter.
+Run it: `deploy/run_coverage_livingroom.sh`. It now runs at true-geometry
+clearance (planner robot_radius 0.18, Nav2 inflation_radius 0.10) with cell
+decomposition + wedge recovery. Coverage is **variable, ~50–85% across runs,
+and does NOT meet the 90% gate** — the run fails when it misses. A hard
+under-furniture pocket cluster, where the robot intermittently wedges and the
+open-loop reverse can't always free it, is the open blocker (see
+`deploy/results/PROVENANCE.md`). Not presented as a pass; the tight room also
+caps efficiency well below the open test_room's.
 
 ## Feedback round (post-M1 review)
 

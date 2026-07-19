@@ -73,6 +73,12 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument('robot_model', default_value='oomwoo_one'),
         DeclareLaunchArgument('gui', default_value='false'),
         base,
-        # start recovery + injector once AMCL is up and localized
+        # A gentle 20 s stagger to spread startup CPU. It does NOT enforce
+        # ordering vs AMCL (AMCL now starts on the sim_bringup spawn event, not
+        # a fixed timer): the two nodes self-gate — kidnap_injector waits on a
+        # latched /map + a "no safe cells yet" guard, kidnap_recovery starts in
+        # TRACKING and only acts on /amcl_pose or a /kidnap_trigger — and the
+        # reloc runner separately waits up to 120 s for /amcl_pose + the kidnap
+        # service before running any trial.
         TimerAction(period=20.0, actions=[kidnap_recovery, kidnap_injector]),
     ])

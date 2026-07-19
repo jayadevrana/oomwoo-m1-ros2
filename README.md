@@ -21,20 +21,20 @@ thinks — see "How it's measured" below.
 
 | Behaviour | Target | Measured |
 |---|---|---|
-| Coverage (uncapped, sweep run to completion) | ≥ 90 % | **94.5 %** |
-| Efficiency at the 90 % crossing | ≥ 80 % | **84.8 %** (785 s) |
-| Efficiency incl. finishing the last ~4.5 % | — | 71.3 % (reported, not gated) |
+| Coverage (uncapped, sweep run to completion) | ≥ 90 % | **97.0 %** |
+| Efficiency at the 90 % crossing | ≥ 80 % | **87.8 %** (806 s) |
+| Efficiency over the whole sweep | — | 68.5 % (reported, not gated) |
 | Relocalize success rate | ≥ 90 % | **100 % (10/10)** |
 | Relocalize time | ≤ 30 s | **6.0 s avg, 9.2 s worst** |
 | Relocalize accuracy | ≤ 2 m | **≤ 0.12 m** |
 
 Both suites exit 0. Coverage is **not target-capped**: the planner runs the
 full sweep + gap-fill to completion and the report shows where it genuinely
-ends (`end_reason=sweep_complete`), so 94.5 % is a measured ceiling, not a
+ends (`end_reason=sweep_complete`), so 97.0 % is a measured ceiling, not a
 stop condition. The two gates are one contract condition — reach ≥90 % at
 ≥80 % efficiency — so efficiency is judged at the moment coverage first
-crosses 90 %; pushing on to 94.5 % costs extra spot-revisit path (diminishing
-returns), which the report discloses as `efficiency_final`. The coverage
+crosses 90 %; pushing on to 97.0 % costs extra spot-revisit path (diminishing
+returns), which the report discloses as `efficiency_final` (68.5 %). The coverage
 denominator is built from the **true body radius (0.1745 m)**, never the
 planner's clearance — floor a timid planner won't enter counts against it.
 
@@ -82,9 +82,10 @@ bash /ros_ws/src/oomwoo-m1/deploy/run_coverage_livingroom.sh
 ```
 
 One caveat on the third script: `run_coverage_livingroom.sh` currently exits
-**1**, because its measured 89.3 % coverage sits below the 90 % gate the runner
-always enforces — an honest number for that tight room (expected on this world),
-not a regression failure.
+**1** — its coverage is variable, ~50–85 % across runs, and does not reach the
+90 % gate the runner always enforces. That tight, furniture-dense room is a
+known open item (a hard under-furniture pocket cluster where the robot
+intermittently wedges), not a flaky test.
 
 No display needed — Gazebo runs with `--headless-rendering`, so this drops
 straight into CI. To watch the identical sim with the Gazebo GUI, add
@@ -132,7 +133,8 @@ instead of drifting near the 30 s limit.
 | Node | Param | Regression value | Meaning |
 |---|---|---|---|
 | coverage_planner | `cleaning_radius` | 0.20 m | half the cleaning swath (see assumption below) |
-| coverage_planner | `robot_radius` | 0.30 m | wall clearance the planner keeps (planning only — never used by the meter) |
+| coverage_planner | `robot_radius` | 0.18 m | planning clearance = true inscribed 0.1745 m rounded up (~5 mm); planning only — never used by the meter |
+| Nav2 costmaps | `inflation_radius` | 0.10 m | deliberately sub-inscribed / contact-tolerant — threads the ~0.4 m under-furniture leg gaps (a bumper vacuum is meant to graze obstacles); set in `nav2_params.yaml` |
 | coverage_meter | `robot_radius` | 0.1745 m | the TRUE body radius; the meter's denominator is built from real geometry, not the planner's clearance, so floor a timid planner skips counts against the score |
 | coverage_planner | `max_gapfill` | 3 | gap-fill passes after the main sweep |
 | coverage_meter | `edge_margin` | 0.15 m | wall strip left to floor-care |
@@ -145,8 +147,8 @@ shipped result was measured with — **not** always the node's own
 you the node default instead: the planner declares `cleaning_radius` 0.16,
 `robot_radius` 0.17 and `row_overlap` 0.10 (the launch pins 0.05); the meter
 declares `robot_radius` 0.175 (the launch pins 0.1745). The other rows match
-their node defaults. (`run_coverage_livingroom.sh` additionally overrides the
-planner `robot_radius` to 0.24.)
+their node defaults. `run_coverage_livingroom.sh` runs at the same
+true-geometry clearance (planner `robot_radius` 0.18, inflation 0.10).
 
 **Explicit assumption — the cleaning swath.** `cleaning_radius = 0.20` means a
 0.40 m swath on a 0.349 m-wide robot: wider than the body. That is only true if
@@ -184,17 +186,17 @@ world-aligned map by slicing the stock collision meshes at the robot's height
 band (2–20 cm). Open-under furniture contributes only its legs, so the floor
 beneath the table counts as cleanable — which is the whole point of a vacuum.
 
-Measured on the **pure stock world** (no overrides), sweep run to completion
-with the true-geometry meter: **89.3 % coverage** (`end_reason=sweep_complete`
-— the planner genuinely exhausted its sweep + gap-fill passes), efficiency
-32.0 %, sim stable (`pose_jumps=0`). Consistent with earlier runs (88.9 %,
-override-era 89.7 %) — the stock mesh collisions were doing the job all along.
-The room is passage-dominated: of 7795 raw reachable free cells, only 5647
-survive a 0.24 m clearance erosion (`tools/compute_denominator.py`) — most of
-the floor is within a body-width of furniture. So efficiency lands well below
-the open
-`test_room`'s by design; the last ~11 % is pockets Nav2's local costmap can't
-enter. The script prints this and writes `coverage_report.json`.
+living_room now runs at **true-geometry clearance** (planner `robot_radius`
+0.18, Nav2 `inflation_radius` 0.10) with boustrophedon cell decomposition +
+wedge recovery. Coverage is **variable, ~50–85 % across runs, and does NOT
+reach the 90 % gate** — so this suite fails by design when a run misses. A hard
+under-furniture pocket cluster, where the robot intermittently wedges and the
+open-loop reverse can't always free it, is the open blocker (see
+[`deploy/results/PROVENANCE.md`](deploy/results/PROVENANCE.md)). It is not
+presented as a pass. The room is passage-dominated: most of the floor is within
+a body-width of furniture, so even clean runs land well below the open
+`test_room`'s efficiency by design. The script prints the measured number and
+writes `coverage_report.json`.
 
 The decoupling's measured effect (reproduce with
 `tools/compute_denominator.py`): switching the meter from the planner's

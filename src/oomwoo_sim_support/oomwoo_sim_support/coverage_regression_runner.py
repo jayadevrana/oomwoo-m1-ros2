@@ -21,14 +21,18 @@ scores the run against the cleaning-jobs acceptance metrics:
     * coverage   >= COVERAGE_TARGET   (default 0.90)
     * efficiency >= EFFICIENCY_TARGET (default 0.80)
 
-The run ends when coverage reaches the target, or plateaus (no meaningful gain
-for PLATEAU_S of sim time), or MAX_SIM_TIME is hit. Emits a machine-parseable
-COVERAGE_SUMMARY log line, writes a JSON report, and exits 0 iff the run passes.
+Reaching the coverage target is the PASS GATE, not a stop condition: the sweep
+runs to completion so the coverage number is uncapped. The run ends when the
+planner reports the sweep done (cleaning_active latched False -> sweep_complete),
+or coverage plateaus for PLATEAU_S of sim time, or MAX_SIM_TIME is hit; two
+wall-clock backstops (wall_timeout, clock_dead) also bound it in real time so a
+sim that never starts or freezes can't hang the run. Emits a machine-parseable
+COVERAGE_SUMMARY line, writes a JSON report, exits 0 iff the run passes.
 
-If the coverage_meter flags the simulation as unstable (ground-truth pose
-teleports — seen on Docker-under-WSL2 and emulated hosts), the run aborts
-immediately with end_reason "sim_unstable" and exit code 2: metrics from an
-unstable sim are meaningless and must not be reported as a plain pass/fail.
+Exit codes: 0 = pass, 1 = target missed (a real coverage result), 2 = the
+measurement is invalid (sim_unstable = ground-truth pose teleported, or
+clock_dead = the sim clock stalled). A wall_timeout is exit 1 with
+measurement_valid=true: the coverage so far is real, the host was just slow.
 Intended to be launched alongside coverage_regression.launch.py.
 """
 
@@ -188,6 +192,12 @@ class CoverageRunner(Node):
                 t_grace = time.time()
                 while rclpy.ok() and time.time() - t_grace < 3.0:
                     rclpy.spin_once(self, timeout_sec=0.2)
+                # a late coverage update during the grace can cross the target;
+                # re-evaluate so eff_at_target isn't left null on a passing run
+                if not self.target_crossed and self.coverage >= self.cov_target:
+                    self.target_crossed = True
+                    self.eff_at_target = self.efficiency
+                    self.t_to_target = self._sim_now() - start_sim
                 break
             if self._sim_now() - self.last_gain_sim_t >= self.plateau_s:
                 reason = 'plateau'

@@ -58,9 +58,10 @@ bash /ros_ws/src/oomwoo-m1/deploy/run_coverage_livingroom.sh
 Same harness on the cluttered stock living_room, used exactly as upstream ships
 it — the robot drives under the marble table and cleans between its legs (stock
 mesh collisions work headless as-is). The room is tight, so efficiency lands
-below the open test_room's by design. Note this suite currently **exits 1**: the
-measured 89.3 % coverage is below the 90 % gate the runner always enforces —
-expected on this world (an honest number for a tight room), not a regression
+below the open test_room's by design. Note this suite currently **exits 1**: its
+coverage is variable, ~50–85 % across runs, and does not meet the 90 % gate the
+runner always enforces — a known open item on this furniture-dense world (a hard
+under-furniture pocket where the robot intermittently wedges), not a regression
 failure.
 
 ## Watching it with the Gazebo GUI

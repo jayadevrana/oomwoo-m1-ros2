@@ -46,29 +46,41 @@ bash deploy/run_coverage_livingroom.sh      # -> coverage_livingroom.json (exits
 
 ## Cell-decomposition + event-launch + wedge-recovery iteration (final)
 
-Config: boustrophedon cell decomposition, Nav2 inflation_radius 0.10 (measured
-sweet spot — see below), zone-only wedge recovery, event-based launch, runner
-wall-clock backstops. 31 unit/lint tests green; launch verified 3/3 on repeated
-headless bringup.
+Config: boustrophedon cell decomposition, planner robot_radius 0.18, Nav2
+inflation_radius 0.10 (sub-inscribed / contact-tolerant — see below), zone-only
+wedge recovery, event-based launch, runner wall-clock backstops. 33 unit/lint
+tests green; launch verified 3/3 on repeated headless bringup (live check on the
+GCP box, not a banked artifact).
 
-- `coverage_testroom_final.json` — test_room, PASS: **97.0% coverage** at
-  sweep_complete, **87.8% efficiency at the 90% crossing** (806 s), revisit 0.276.
-  Up from the pre-iteration 94.5%/84.8%; no regression.
+- `coverage_testroom_final.json` — test_room, **PASS, banked JSON at this exact
+  config**: 97.0% coverage at sweep_complete, 87.8% efficiency at the 90%
+  crossing (806 s), efficiency_final 68.5%, revisit 0.276. Up from the M1
+  baseline 94.5%/84.8%; efficiency-at-target bounces run to run in the
+  mid-to-high 80s, always clear of the 80% gate.
 
-- living_room — **variable 50–85% across runs; does NOT reliably meet the 90%
-  gate.** Best observed 84.86% coverage (zone-only recovery let the sweep climb
-  past the old freeze); worst ~50.5% (robot wedges in a hard under-furniture
-  pocket cluster and the open-loop reverse can't free it that run). The wedge
-  recovery removed the earlier 15-minute single-pocket freeze (now discrete
-  events, coverage keeps climbing when the robot frees itself), but escape is
-  not guaranteed, so coverage is run-dependent. This is the honest blocker to
-  the living_room acceptance: a hard-pocket wedge the current recovery can't
-  always clear.
+- living_room — **does NOT meet the 90% gate; coverage is variable ~50–85%
+  across runs.** IMPORTANT: no clean JSON was banked at this final config — the
+  living_room runs are ~45 min each and variable on the cloud box, so the
+  50–85% range is from live run logs, not a banked report. (The one banked
+  living_room artifact, `coverage_livingroom_bcd_final_log_line.txt` = 85.53%,
+  is from the EARLIER bcd config — robot_radius 0.24, pre-wedge-recovery — and
+  is NOT this config; don't read it as the current number.) The behaviour: the
+  wedge recovery removed the earlier 15-minute single-pocket freeze (discrete
+  events now, coverage keeps climbing when the robot frees itself), but escape
+  from the hard under-furniture pocket cluster is not guaranteed, so some runs
+  climb to ~85% and some stall near ~50%. That non-determinism is the honest
+  blocker. To bank a citable number, re-run on a faster host and commit the JSON.
 
-- inflation_radius trade, measured: 0.02 (near-zero, per the client's
-  suggestion) is WORSE — the controller can't find collision-free trajectories
-  when obstacles are barely inflated, so the robot stalls/wedges. 0.175 (at the
-  inscribed radius) seals the tight leg gaps. 0.10 is the measured best.
+- inflation_radius trade, measured live (not banked as JSON): 0.02 (near-zero,
+  per the client's suggestion) is WORSE — the controller can't find
+  collision-free trajectories when obstacles are barely inflated, so the robot
+  stalls/wedges. 0.175 (at/above the inscribed radius, the textbook value)
+  seals the tight leg gaps shut. 0.10 is sub-inscribed and contact-tolerant —
+  the planner routes the body to graze/slightly overlap obstacles (fine for a
+  bumper vacuum) — and measured best for threading the ~0.4 m gaps.
+
+- `coverage_testroom_v3.json` is a superseded intermediate (inflation 0.175);
+  the current test_room result is `coverage_testroom_final.json`.
 
 - revisit_ratio (new metric) tracks driven distance over already-covered floor:
   ~0.12–0.28 on clean sweeps, rising to ~0.37 when the robot re-cleans while

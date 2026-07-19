@@ -159,14 +159,20 @@ local_costmap:
       plugins: ["obstacle_layer", "voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        # MEASURED sweet spot for this vacuum in the cluttered world. A vacuum
-        # should hug walls/furniture (bumper handles contact), so inflation is
-        # well below a delivery-robot value (was 0.24/0.30). But it is NOT
-        # near-zero: measured, 0.02 makes the controller unable to find
-        # collision-free trajectories near obstacles (it stalls/wedges), and
-        # 0.175 seals the tight under-furniture gaps. 0.10 is the empirical best
-        # -- enough gradient to guide the controller smoothly along edges
-        # without closing the ~0.4 m leg gaps the robot must clean under.
+        # DELIBERATELY SUB-INSCRIBED and contact-tolerant. inflation_radius
+        # 0.10 is BELOW the 0.1745 inscribed radius, so there is no proper soft
+        # cost gradient (that would need inflation_radius >= inscribed) — the
+        # planner routes the robot's centre to within 0.10 m of obstacles, i.e.
+        # the body edge grazes/slightly overlaps the inflated obstacle. For a
+        # bumper-equipped vacuum that contact is acceptable and is exactly the
+        # "touch things" intent. It is unconventional for Nav2, chosen ONLY
+        # because it measured best here: 0.02 leaves the controller unable to
+        # find trajectories (it stalls/wedges); >= 0.175 (at/above inscribed,
+        # the textbook value) seals the ~0.4 m under-furniture leg gaps shut;
+        # 0.10 threads them. cost_scaling is moot below inscribed. Trade-off:
+        # more physical contact/wedging, which the wedge-recovery path handles
+        # imperfectly (see PROVENANCE living_room). Raise to >= 0.175 for a
+        # conventional, contact-averse config at the cost of the tight gaps.
         inflation_radius: 0.10
         cost_scaling_factor: 10.0
       obstacle_layer:
@@ -255,14 +261,20 @@ global_costmap:
         transform_tolerance: 5.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        # MEASURED sweet spot for this vacuum in the cluttered world. A vacuum
-        # should hug walls/furniture (bumper handles contact), so inflation is
-        # well below a delivery-robot value (was 0.24/0.30). But it is NOT
-        # near-zero: measured, 0.02 makes the controller unable to find
-        # collision-free trajectories near obstacles (it stalls/wedges), and
-        # 0.175 seals the tight under-furniture gaps. 0.10 is the empirical best
-        # -- enough gradient to guide the controller smoothly along edges
-        # without closing the ~0.4 m leg gaps the robot must clean under.
+        # DELIBERATELY SUB-INSCRIBED and contact-tolerant. inflation_radius
+        # 0.10 is BELOW the 0.1745 inscribed radius, so there is no proper soft
+        # cost gradient (that would need inflation_radius >= inscribed) — the
+        # planner routes the robot's centre to within 0.10 m of obstacles, i.e.
+        # the body edge grazes/slightly overlaps the inflated obstacle. For a
+        # bumper-equipped vacuum that contact is acceptable and is exactly the
+        # "touch things" intent. It is unconventional for Nav2, chosen ONLY
+        # because it measured best here: 0.02 leaves the controller unable to
+        # find trajectories (it stalls/wedges); >= 0.175 (at/above inscribed,
+        # the textbook value) seals the ~0.4 m under-furniture leg gaps shut;
+        # 0.10 threads them. cost_scaling is moot below inscribed. Trade-off:
+        # more physical contact/wedging, which the wedge-recovery path handles
+        # imperfectly (see PROVENANCE living_room). Raise to >= 0.175 for a
+        # conventional, contact-averse config at the cost of the tight gaps.
         inflation_radius: 0.10
         cost_scaling_factor: 10.0
       always_send_full_costmap: true
