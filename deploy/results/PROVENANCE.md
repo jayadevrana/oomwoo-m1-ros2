@@ -22,9 +22,16 @@ Regenerating is a one-command re-run per suite (report lands at
 `/root/coverage_report.json` inside the container; copy it here):
 
 ```bash
-bash deploy/run_coverage_regression.sh      # -> coverage_testroom.json
-bash deploy/run_coverage_livingroom.sh      # -> coverage_livingroom.json (exits 1 by design: 89.3 % < the 90 % gate)
+bash deploy/run_coverage_regression.sh      # test_room  -> pass (97.0% / 87.8%)
+bash deploy/run_coverage_livingroom.sh      # living_room -> exit 1, variable
+                                            # ~50-85% at the current true-geometry
+                                            # config (does NOT meet 90%; see below)
 ```
+
+(The older `coverage_testroom.json` / `coverage_livingroom.json` artifacts here
+are superseded pre-iteration baselines. `coverage_testroom_final.json` is the
+current test_room result; the living_room number at the current config is not
+banked — see the final-iteration section.)
 
 ## Cell-decomposition iteration (in progress)
 
@@ -48,7 +55,7 @@ bash deploy/run_coverage_livingroom.sh      # -> coverage_livingroom.json (exits
 
 Config: boustrophedon cell decomposition, planner robot_radius 0.18, Nav2
 inflation_radius 0.10 (sub-inscribed / contact-tolerant — see below), zone-only
-wedge recovery, event-based launch, runner wall-clock backstops. 33 unit/lint
+wedge recovery, event-based launch, runner wall-clock backstops. 35 unit/lint
 tests green; launch verified 3/3 on repeated headless bringup (live check on the
 GCP box, not a banked artifact).
 
